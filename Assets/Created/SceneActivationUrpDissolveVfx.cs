@@ -70,17 +70,17 @@ public class SceneActivationUrpDissolveVfx : MonoBehaviour
     private Material _litTemplate;
     private Material _unlitTemplate;
 
-    public void Play(GameObject sceneRoot, Transform referencePoint, Settings settings)
+    public float Play(GameObject sceneRoot, Transform referencePoint, Settings settings)
     {
         StopAndClear();
 
         if (sceneRoot == null)
-            return;
+            return 0f;
 
         Settings sanitized = Sanitize(settings);
         List<RendererGroup> groups = CollectGroups(sceneRoot.transform, referencePoint, sanitized.minBoundsSize);
         if (groups.Count == 0)
-            return;
+            return 0f;
 
         int registeredRenderers = 0;
         for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
@@ -106,10 +106,12 @@ public class SceneActivationUrpDissolveVfx : MonoBehaviour
         if (_entries.Count == 0)
         {
             DestroyRuntimeMaterials();
-            return;
+            return 0f;
         }
 
+        float totalDuration = CalculateTotalDuration(_entries, sanitized.duration);
         _playRoutine = StartCoroutine(PlayRoutine(sanitized));
+        return totalDuration;
     }
 
     public void StopAndClear()
@@ -126,9 +128,7 @@ public class SceneActivationUrpDissolveVfx : MonoBehaviour
 
     private IEnumerator PlayRoutine(Settings settings)
     {
-        float totalDuration = settings.duration;
-        for (int i = 0; i < _entries.Count; i++)
-            totalDuration = Mathf.Max(totalDuration, _entries[i].StartDelay + settings.duration);
+        float totalDuration = CalculateTotalDuration(_entries, settings.duration);
 
         float elapsed = 0f;
         while (elapsed < totalDuration)
@@ -142,6 +142,24 @@ public class SceneActivationUrpDissolveVfx : MonoBehaviour
         RestoreOriginalMaterials();
         DestroyRuntimeMaterials();
         _playRoutine = null;
+    }
+
+    private static float CalculateTotalDuration(List<RendererEntry> entries, float duration)
+    {
+        float totalDuration = duration;
+        if (entries == null)
+            return totalDuration;
+
+        for (int i = 0; i < entries.Count; i++)
+        {
+            RendererEntry entry = entries[i];
+            if (entry == null)
+                continue;
+
+            totalDuration = Mathf.Max(totalDuration, entry.StartDelay + duration);
+        }
+
+        return totalDuration;
     }
 
     private void UpdateEntries(float elapsed, float duration)

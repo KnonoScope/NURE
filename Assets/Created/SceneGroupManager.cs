@@ -22,6 +22,16 @@ public class SceneGroupManager : MonoBehaviour
     private const string DefaultGlobalSkyboxTextureResourceName = "rosendal_plains_2_4k";
     private const int RuntimeSkyDomeLongitudeSegments = 128;
     private const int RuntimeSkyDomeLatitudeSegments = 64;
+    private const float ContinuousSceneRuleRefreshInterval = 0.2f;
+    private const float CameraCacheRefreshInterval = 0.75f;
+    private const int DefaultVideoRenderTextureMaxSize = 4096;
+    private const int MobileVideoRenderTextureMaxSize = 2048;
+    private const int MobileSceneSpawnDissolveMaxRenderers = 24;
+    private const float MobileSceneSpawnDissolveDuration = 1.25f;
+    private const float MobileSceneSpawnDissolveMinBoundsSize = 0.35f;
+    private const string Scene7DelayedDissolveSceneName = "Scena7";
+    private const string Scene7DelayedDissolveObjectName = "Mausoleo";
+    private const float Scene7DelayedDissolveExtraDelay = 10f;
     private static readonly string[] ForcedToggleObjectNames =
     {
         "Rune_125K_20x4096",
@@ -356,6 +366,7 @@ public class SceneGroupManager : MonoBehaviour
     private Coroutine _epigrafeEntranceRoutine;
     private Coroutine _scene1PoseRoutine;
     private Coroutine _scene8ChurchFadeRoutine;
+    private Coroutine _scene7DelayedDissolveRoutine;
     private readonly Dictionary<int, PlayableGraph> _donnaGraphs = new Dictionary<int, PlayableGraph>(4);
     private bool _isScene1RuleActive;
     private float _lastEditorHotkeyTime;
@@ -366,6 +377,7 @@ public class SceneGroupManager : MonoBehaviour
     private readonly Dictionary<Transform, Vector3> _scene1PlasticoBaseLocalPositions = new Dictionary<Transform, Vector3>();
     private readonly Dictionary<int, CameraClearFlags> _cameraClearFlagsBackup = new Dictionary<int, CameraClearFlags>(8);
     private readonly Dictionary<int, Color> _cameraBackgroundBackup = new Dictionary<int, Color>(8);
+    private readonly Dictionary<string, List<GameObject>> _sceneObjectsByExactNameCache = new Dictionary<string, List<GameObject>>(8);
     private readonly List<Scene8ChurchTargetState> _scene8ChurchTargetStates = new List<Scene8ChurchTargetState>(4);
     private readonly List<Scene8RendererFadeState> _scene8ChurchRendererStates = new List<Scene8RendererFadeState>(32);
     private readonly List<Scene8LightFadeState> _scene8ChurchLightStates = new List<Scene8LightFadeState>(8);
@@ -387,6 +399,11 @@ public class SceneGroupManager : MonoBehaviour
     private Transform _startupViewBlockerTransform;
     private CanvasGroup _startupViewBlockerCanvasGroup;
     private SceneActivationUrpDissolveVfx _sceneSpawnDissolveVfx;
+    private Camera[] _cachedSceneCameras = Array.Empty<Camera>();
+    private float _nextContinuousSceneRuleRefreshTime = -1f;
+    private float _nextCameraCacheRefreshTime = -1f;
+    private GameObject _scene7DelayedDissolveTarget;
+    private bool _scene7DelayedDissolveTargetOriginalActive;
 
     private sealed class Scene8ChurchTargetState
     {
@@ -413,6 +430,9 @@ public class SceneGroupManager : MonoBehaviour
         scene1Name = ForcedScene1Name;
         globalObjectName = ForcedToggleObjectNames[0];
         enforceScene1PlasticoOnly = false;
+
+        if (!Application.isEditor && !Debug.isDebugBuild)
+            verboseLogs = false;
 
         if (!_hasCapturedInitialSkybox)
         {
@@ -454,6 +474,14 @@ public class SceneGroupManager : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (IsRuntimeSkyDomeVisible())
+            UpdateRuntimeSkyDomePose();
+
+        if (Time.unscaledTime < _nextContinuousSceneRuleRefreshTime)
+            return;
+
+        _nextContinuousSceneRuleRefreshTime = Time.unscaledTime + ContinuousSceneRuleRefreshInterval;
+
         if (enforceGlobalObjectByScene && enforceGlobalObjectContinuously)
         {
             bool shouldForceOff = IsRuneOffRuleCurrentlyActive();
@@ -524,6 +552,8 @@ public class SceneGroupManager : MonoBehaviour
 
     private void OnDisable()
     {
+        StopScene7DelayedDissolve(restoreTarget: true);
+
         if (_sceneSpawnDissolveVfx != null)
             _sceneSpawnDissolveVfx.StopAndClear();
 
@@ -604,6 +634,8 @@ public class SceneGroupManager : MonoBehaviour
 
     public void DeactivateAllScenes()
     {
+        StopScene7DelayedDissolve(restoreTarget: true);
+
         foreach (var s in scenes)
         {
             if (s.root != null)
@@ -1026,17 +1058,11 @@ public class SceneGroupManager : MonoBehaviour
         if (string.IsNullOrEmpty(exactName))
             return null;
 
-        GameObject[] all = Resources.FindObjectsOfTypeAll<GameObject>();
-        for (int i = 0; i < all.Length; i++)
+        List<GameObject> matches = FindSceneObjectsByExactName(exactName);
+        for (int i = 0; i < matches.Count; i++)
         {
-            GameObject go = all[i];
+            GameObject go = matches[i];
             if (go == null)
-                continue;
-            if (!go.scene.IsValid())
-                continue;
-            if (go.hideFlags != HideFlags.None)
-                continue;
-            if (!string.Equals(go.name, exactName, StringComparison.Ordinal))
                 continue;
 
             return go.transform;
@@ -1117,8 +1143,16 @@ public class SceneGroupManager : MonoBehaviour
         if (srcW == 0 || srcH == 0)
             return;
 
-        int targetW = Mathf.Clamp((int)srcW, 256, 4096);
-        int targetH = Mathf.Clamp((int)srcH, 256, 4096);
+        int targetW = Mathf.Max(256, (int)srcW);
+        int targetH = Mathf.Max(256, (int)srcH);
+        int maxTargetSize = Application.isMobilePlatform ? MobileVideoRenderTextureMaxSize : DefaultVideoRenderTextureMaxSize;
+        int maxDimension = Mathf.Max(targetW, targetH);
+        if (maxDimension > maxTargetSize)
+        {
+            float scale = maxTargetSize / (float)maxDimension;
+            targetW = Mathf.Max(256, Mathf.RoundToInt(targetW * scale));
+            targetH = Mathf.Max(256, Mathf.RoundToInt(targetH * scale));
+        }
 
         RenderTexture rt;
         if (_runtimeVideoTextures.TryGetValue(vp, out rt))
@@ -1248,6 +1282,7 @@ public class SceneGroupManager : MonoBehaviour
 
     private void ActivateOnly(VirtualScene cfg)
     {
+        StopScene7DelayedDissolve(restoreTarget: true);
         StopScene8ChurchDelayedFade(restoreState: true);
         StopEpigrafeEntrance();
         StopDonnaSequence();
@@ -1273,6 +1308,8 @@ public class SceneGroupManager : MonoBehaviour
     {
         if (cfg == null || cfg.root == null || !enableSceneSpawnDissolveFx)
         {
+            StopScene7DelayedDissolve(restoreTarget: true);
+
             if (_sceneSpawnDissolveVfx != null)
                 _sceneSpawnDissolveVfx.StopAndClear();
             return;
@@ -1285,6 +1322,7 @@ public class SceneGroupManager : MonoBehaviour
                 _sceneSpawnDissolveVfx = gameObject.AddComponent<SceneActivationUrpDissolveVfx>();
         }
 
+        string sceneName = string.IsNullOrWhiteSpace(cfg.name) ? cfg.root.name : cfg.name;
         SceneActivationUrpDissolveVfx.Settings settings = new SceneActivationUrpDissolveVfx.Settings
         {
             maxRenderers = sceneSpawnDissolveMaxRenderers,
@@ -1297,11 +1335,82 @@ public class SceneGroupManager : MonoBehaviour
             edgeColor = sceneSpawnDissolveEdgeColor,
         };
 
+        if (Application.isMobilePlatform)
+        {
+            settings.maxRenderers = Mathf.Min(settings.maxRenderers, MobileSceneSpawnDissolveMaxRenderers);
+            settings.duration = Mathf.Min(settings.duration, MobileSceneSpawnDissolveDuration);
+            settings.minBoundsSize = Mathf.Max(settings.minBoundsSize, MobileSceneSpawnDissolveMinBoundsSize);
+        }
+
         Transform referencePoint = cfg.playerSpawn != null ? cfg.playerSpawn : player;
-        _sceneSpawnDissolveVfx.Play(cfg.root, referencePoint, settings);
+        PrepareScene7DelayedDissolveTarget(cfg, sceneName);
+        float initialDissolveDuration = _sceneSpawnDissolveVfx.Play(cfg.root, referencePoint, settings);
+        TryStartScene7DelayedDissolve(cfg, sceneName, referencePoint, settings, initialDissolveDuration);
 
         if (verboseLogs)
             Debug.Log($"[SceneGroupManager] Scene spawn dissolve FX -> {cfg.root.name}");
+    }
+
+    private void PrepareScene7DelayedDissolveTarget(VirtualScene cfg, string sceneName)
+    {
+        StopScene7DelayedDissolve(restoreTarget: true);
+
+        if (cfg == null || cfg.root == null)
+            return;
+
+        if (!string.Equals(sceneName, Scene7DelayedDissolveSceneName, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        Transform target = FindChildByExactName(cfg.root.transform, Scene7DelayedDissolveObjectName);
+        if (target == null)
+            return;
+
+        _scene7DelayedDissolveTarget = target.gameObject;
+        _scene7DelayedDissolveTargetOriginalActive = _scene7DelayedDissolveTarget.activeSelf;
+        _scene7DelayedDissolveTarget.SetActive(false);
+    }
+
+    private void TryStartScene7DelayedDissolve(VirtualScene cfg, string sceneName, Transform referencePoint, SceneActivationUrpDissolveVfx.Settings settings, float initialDissolveDuration)
+    {
+        if (cfg == null || cfg.root == null || _scene7DelayedDissolveTarget == null)
+            return;
+
+        if (!string.Equals(sceneName, Scene7DelayedDissolveSceneName, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        float waitSeconds = Mathf.Max(0f, initialDissolveDuration) + Scene7DelayedDissolveExtraDelay;
+        _scene7DelayedDissolveRoutine = StartCoroutine(Scene7DelayedDissolveRoutine(cfg.root, _scene7DelayedDissolveTarget, referencePoint, settings, waitSeconds));
+    }
+
+    private IEnumerator Scene7DelayedDissolveRoutine(GameObject sceneRoot, GameObject target, Transform referencePoint, SceneActivationUrpDissolveVfx.Settings settings, float waitSeconds)
+    {
+        if (waitSeconds > 0f)
+            yield return new WaitForSeconds(waitSeconds);
+
+        if (sceneRoot == null || target == null || !sceneRoot.activeInHierarchy)
+        {
+            _scene7DelayedDissolveRoutine = null;
+            yield break;
+        }
+
+        target.SetActive(true);
+        _sceneSpawnDissolveVfx.Play(target, referencePoint, settings);
+        _scene7DelayedDissolveRoutine = null;
+    }
+
+    private void StopScene7DelayedDissolve(bool restoreTarget)
+    {
+        if (_scene7DelayedDissolveRoutine != null)
+        {
+            StopCoroutine(_scene7DelayedDissolveRoutine);
+            _scene7DelayedDissolveRoutine = null;
+        }
+
+        if (restoreTarget && _scene7DelayedDissolveTarget != null)
+            _scene7DelayedDissolveTarget.SetActive(_scene7DelayedDissolveTargetOriginalActive);
+
+        _scene7DelayedDissolveTarget = null;
+        _scene7DelayedDissolveTargetOriginalActive = false;
     }
 
     private void ApplySceneSpecificVisibility(VirtualScene cfg)
@@ -1628,7 +1737,7 @@ public class SceneGroupManager : MonoBehaviour
 
     private void ApplyCameraNoSkyRule(bool hideSkybox)
     {
-        Camera[] cameras = FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        Camera[] cameras = GetSceneCameras();
         Camera mainCamera = Camera.main;
         bool hasSkyboxMaterial = RenderSettings.skybox != null;
         bool hasRuntimeSkyDome = IsRuntimeSkyDomeVisible();
@@ -1717,6 +1826,31 @@ public class SceneGroupManager : MonoBehaviour
             return true;
 
         return RenderSettings.skybox == null;
+    }
+
+    private Camera[] GetSceneCameras()
+    {
+        if (_cachedSceneCameras.Length == 0
+            || Time.unscaledTime >= _nextCameraCacheRefreshTime
+            || HasInvalidCachedCameraReference())
+        {
+            _cachedSceneCameras = FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            _nextCameraCacheRefreshTime = Time.unscaledTime + CameraCacheRefreshInterval;
+        }
+
+        return _cachedSceneCameras;
+    }
+
+    private bool HasInvalidCachedCameraReference()
+    {
+        for (int i = 0; i < _cachedSceneCameras.Length; i++)
+        {
+            Camera cam = _cachedSceneCameras[i];
+            if (cam == null || !cam.gameObject.scene.IsValid())
+                return true;
+        }
+
+        return false;
     }
 
     private bool EnsureRuntimeSkyDome()
@@ -2032,11 +2166,21 @@ public class SceneGroupManager : MonoBehaviour
         return false;
     }
 
-    private static List<GameObject> FindSceneObjectsByExactName(string exactName)
+    private List<GameObject> FindSceneObjectsByExactName(string exactName)
     {
-        var result = new List<GameObject>();
         if (string.IsNullOrWhiteSpace(exactName))
-            return result;
+            return new List<GameObject>(0);
+
+        if (_sceneObjectsByExactNameCache.TryGetValue(exactName, out List<GameObject> cached))
+        {
+            PruneInvalidSceneObjectReferences(cached);
+            if (cached.Count > 0)
+                return cached;
+
+            _sceneObjectsByExactNameCache.Remove(exactName);
+        }
+
+        var result = new List<GameObject>(4);
 
         int sceneCount = SceneManager.sceneCount;
         for (int s = 0; s < sceneCount; s++)
@@ -2052,7 +2196,21 @@ public class SceneGroupManager : MonoBehaviour
             }
         }
 
+        _sceneObjectsByExactNameCache[exactName] = result;
         return result;
+    }
+
+    private static void PruneInvalidSceneObjectReferences(List<GameObject> objects)
+    {
+        if (objects == null)
+            return;
+
+        for (int i = objects.Count - 1; i >= 0; i--)
+        {
+            GameObject go = objects[i];
+            if (go == null || !go.scene.IsValid())
+                objects.RemoveAt(i);
+        }
     }
 
     private void TryStartEpigrafeScene3Entrance(VirtualScene cfg)
@@ -2178,6 +2336,24 @@ public class SceneGroupManager : MonoBehaviour
 
         string tokenTrimmed = token.Trim();
         return FindChildByNameContainsRecursive(root, tokenTrimmed);
+    }
+
+    private static Transform FindChildByExactName(Transform root, string exactName)
+    {
+        if (root == null || string.IsNullOrWhiteSpace(exactName))
+            return null;
+
+        if (IsNameMatch(root.name, exactName))
+            return root;
+
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindChildByExactName(root.GetChild(i), exactName);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 
     private static Transform FindChildByNameContainsRecursive(Transform current, string token)
