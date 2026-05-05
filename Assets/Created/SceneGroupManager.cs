@@ -272,6 +272,41 @@ public class SceneGroupManager : MonoBehaviour
     [Tooltip("Delay prima della partenza dell'animazione in Scena3.")]
     [Min(0f)] public float epigrafeEntranceDelay = 5f;
 
+    [Header("Scene Spawn Dissolve FX")]
+    [Tooltip("Se true, all'attivazione di una scena virtuale applica un dissolve URP temporaneo ai renderer della scena.")]
+    public bool enableSceneSpawnDissolveFx = true;
+
+    [Range(1, 256)]
+    [Tooltip("Numero massimo di renderer coinvolti nel dissolve per ogni cambio scena.")]
+    public int sceneSpawnDissolveMaxRenderers = 96;
+
+    [Range(0.15f, 6f)]
+    [Tooltip("Durata del dissolve da smaterializzato a materializzato.")]
+    public float sceneSpawnDissolveDuration = 3f;
+
+    [Range(0f, 0.25f)]
+    [Tooltip("Piccolo sfasamento tra i gruppi principali della scena.")]
+    public float sceneSpawnDissolveGroupStagger = 0.03f;
+
+    [Min(0.01f)]
+    [Tooltip("Ignora renderer troppo piccoli per evitare rumore visivo.")]
+    public float sceneSpawnDissolveMinBoundsSize = 0.15f;
+
+    [Range(0.001f, 0.25f)]
+    [Tooltip("Spessore del bordo luminoso del dissolve.")]
+    public float sceneSpawnDissolveEdgeWidth = 0.055f;
+
+    [Range(0f, 8f)]
+    [Tooltip("Intensita' del bordo luminoso del dissolve.")]
+    public float sceneSpawnDissolveEdgeIntensity = 1.15f;
+
+    [Tooltip("Colore del bordo del dissolve.")]
+    public Color sceneSpawnDissolveEdgeColor = new Color(0.62f, 0.94f, 1f, 1f);
+
+    [Range(0.1f, 128f)]
+    [Tooltip("Scala del rumore usato dal dissolve.")]
+    public float sceneSpawnDissolveNoiseScale = 24f;
+
     [Header("Editor Hotkey")]
     [Tooltip("In Play Mode da Editor, premi H per passare subito alla scena successiva.")]
     public bool enableEditorNextSceneHotkey = true;
@@ -351,6 +386,7 @@ public class SceneGroupManager : MonoBehaviour
     private Coroutine _startupViewBlockerRoutine;
     private Transform _startupViewBlockerTransform;
     private CanvasGroup _startupViewBlockerCanvasGroup;
+    private SceneActivationUrpDissolveVfx _sceneSpawnDissolveVfx;
 
     private sealed class Scene8ChurchTargetState
     {
@@ -488,6 +524,9 @@ public class SceneGroupManager : MonoBehaviour
 
     private void OnDisable()
     {
+        if (_sceneSpawnDissolveVfx != null)
+            _sceneSpawnDissolveVfx.StopAndClear();
+
         StopScene8ChurchDelayedFade(restoreState: true);
         StopScene1PoseRoutine();
         StopAndDestroyStartupViewBlocker();
@@ -1226,7 +1265,43 @@ public class SceneGroupManager : MonoBehaviour
         TryStartEpigrafeScene3Entrance(cfg);
         EnsureScene6StaticTorchFlames(cfg);
         TryStartScene8ChurchDelayedFade(cfg);
+        TryPlaySceneSpawnDissolveFx(cfg);
         SceneActivated?.Invoke(cfg);
+    }
+
+    private void TryPlaySceneSpawnDissolveFx(VirtualScene cfg)
+    {
+        if (cfg == null || cfg.root == null || !enableSceneSpawnDissolveFx)
+        {
+            if (_sceneSpawnDissolveVfx != null)
+                _sceneSpawnDissolveVfx.StopAndClear();
+            return;
+        }
+
+        if (_sceneSpawnDissolveVfx == null)
+        {
+            _sceneSpawnDissolveVfx = GetComponent<SceneActivationUrpDissolveVfx>();
+            if (_sceneSpawnDissolveVfx == null)
+                _sceneSpawnDissolveVfx = gameObject.AddComponent<SceneActivationUrpDissolveVfx>();
+        }
+
+        SceneActivationUrpDissolveVfx.Settings settings = new SceneActivationUrpDissolveVfx.Settings
+        {
+            maxRenderers = sceneSpawnDissolveMaxRenderers,
+            duration = sceneSpawnDissolveDuration,
+            groupStagger = sceneSpawnDissolveGroupStagger,
+            minBoundsSize = sceneSpawnDissolveMinBoundsSize,
+            edgeWidth = sceneSpawnDissolveEdgeWidth,
+            edgeColorIntensity = sceneSpawnDissolveEdgeIntensity,
+            noiseScale = sceneSpawnDissolveNoiseScale,
+            edgeColor = sceneSpawnDissolveEdgeColor,
+        };
+
+        Transform referencePoint = cfg.playerSpawn != null ? cfg.playerSpawn : player;
+        _sceneSpawnDissolveVfx.Play(cfg.root, referencePoint, settings);
+
+        if (verboseLogs)
+            Debug.Log($"[SceneGroupManager] Scene spawn dissolve FX -> {cfg.root.name}");
     }
 
     private void ApplySceneSpecificVisibility(VirtualScene cfg)
@@ -2028,14 +2103,26 @@ public class SceneGroupManager : MonoBehaviour
         Vector3 startWorld = epigrafe.position;
         Vector3 targetScale = baseLocalScale * Mathf.Max(0.1f, epigrafeScaleMultiplier);
 
-        Vector3 targetWorld = startWorld + epigrafe.forward * Mathf.Max(0f, epigrafeMoveTowardsPlayerDistance);
-        if (player != null)
+        Vector3 fallbackForward = epigrafe.forward;
+        fallbackForward.y = 0f;
+        if (fallbackForward.sqrMagnitude <= 0.0001f)
+            fallbackForward = Vector3.forward;
+
+        Vector3 targetWorld = startWorld + fallbackForward.normalized * Mathf.Max(0f, epigrafeMoveTowardsPlayerDistance);
+        Transform viewer = TryGetPlayerHeadTransform();
+        if (viewer == null)
+            viewer = player;
+
+        if (viewer != null)
         {
-            Vector3 toPlayer = player.position - startWorld;
-            if (toPlayer.sqrMagnitude > 0.0001f)
+            Vector3 viewerTarget = viewer.position;
+            viewerTarget.y = startWorld.y;
+
+            Vector3 toViewer = viewerTarget - startWorld;
+            if (toViewer.sqrMagnitude > 0.0001f)
             {
                 float moveFraction = Mathf.Clamp01(epigrafeMoveTowardsPlayerFraction);
-                targetWorld = Vector3.Lerp(startWorld, player.position, moveFraction);
+                targetWorld = Vector3.Lerp(startWorld, viewerTarget, moveFraction);
             }
         }
 
