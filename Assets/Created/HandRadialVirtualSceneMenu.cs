@@ -203,6 +203,7 @@ public class HandRadialVirtualSceneMenu : MonoBehaviour
 #endif
     private RectTransform _gridContainerRect;
     private RectTransform _wristToggleCanvasRect;
+    private int _lastAppliedLanguageVersion = -1;
 
     private void Awake()
     {
@@ -241,6 +242,7 @@ public class HandRadialVirtualSceneMenu : MonoBehaviour
 
     private void Update()
     {
+        RefreshLocalizedLabelsIfNeeded();
         UpdateFollowAnchor();
         UpdateWristTogglePose();
         HandleEditorKeyboardSkip();
@@ -306,7 +308,19 @@ public class HandRadialVirtualSceneMenu : MonoBehaviour
     public void RefreshButtons()
     {
         CacheButtons();
+        ApplyLocalizedLabels();
         ApplyButtonStates();
+    }
+
+    public string GetLocalizedTargetLabel(int zeroBasedIndex)
+    {
+        if (sceneGroupManager == null || targets == null)
+            return string.Empty;
+
+        if (zeroBasedIndex < 0 || zeroBasedIndex >= targets.Length)
+            return string.Empty;
+
+        return sceneGroupManager.GetLocalizedSceneLabel(targets[zeroBasedIndex]);
     }
 
     private void BindSceneGroupManagerEvents()
@@ -621,6 +635,65 @@ public class HandRadialVirtualSceneMenu : MonoBehaviour
                 _cachedButtons[i].SetTrackingOrigin(ResolveTrackingOrigin());
             }
         }
+    }
+
+    private void RefreshLocalizedLabelsIfNeeded()
+    {
+        int version = sceneGroupManager != null ? sceneGroupManager.LanguageVersion : 0;
+        if (version == _lastAppliedLanguageVersion)
+            return;
+
+        ApplyLocalizedLabels();
+        _lastAppliedLanguageVersion = version;
+    }
+
+    private void ApplyLocalizedLabels()
+    {
+        if (_cachedButtons == null)
+            CacheButtons();
+
+        if (_cachedButtons == null)
+            return;
+
+        for (int i = 0; i < _cachedButtons.Length; i++)
+        {
+            VirtualSceneMenuButton b = _cachedButtons[i];
+            if (b == null)
+                continue;
+
+            string label = GetLocalizedTargetLabel(b.ZeroBasedIndex);
+            if (string.IsNullOrWhiteSpace(label))
+                continue;
+
+            b.customLabel = label;
+            b.RefreshLabel();
+        }
+
+        ApplyLocalizedUtilityLabels();
+    }
+
+    private void ApplyLocalizedUtilityLabels()
+    {
+        string localizedMenu = sceneGroupManager != null ? sceneGroupManager.GetLocalizedInterfaceText("menu", wristButtonLabel) : wristButtonLabel;
+        string localizedMove = sceneGroupManager != null ? sceneGroupManager.GetLocalizedInterfaceText("move", dragHandleLabel) : dragHandleLabel;
+
+        if (_wristToggleCanvasRect != null)
+        {
+            Text label = _wristToggleCanvasRect.GetComponentInChildren<Text>(true);
+            if (label != null)
+                label.text = localizedMenu;
+        }
+
+        if (menuRoot == null)
+            return;
+
+        Transform dragHandle = menuRoot.transform.Find("DragHandle");
+        if (dragHandle == null)
+            return;
+
+        Text dragLabel = dragHandle.GetComponentInChildren<Text>(true);
+        if (dragLabel != null)
+            dragLabel.text = localizedMove;
     }
 
     private void ApplyButtonStates()
@@ -1130,7 +1203,7 @@ public class HandRadialVirtualSceneMenu : MonoBehaviour
         Text label = GetOrCreateLegacyText(handleRect, "DragHandleLabel");
         if (label != null)
         {
-            label.text = dragHandleLabel;
+            label.text = sceneGroupManager != null ? sceneGroupManager.GetLocalizedInterfaceText("move", dragHandleLabel) : dragHandleLabel;
             label.alignment = TextAnchor.MiddleCenter;
             label.fontSize = 18;
             label.color = Color.white;
@@ -1358,7 +1431,7 @@ public class HandRadialVirtualSceneMenu : MonoBehaviour
         Text label = GetOrCreateLegacyText(buttonRect, "Label");
         if (label != null)
         {
-            label.text = wristButtonLabel;
+            label.text = sceneGroupManager != null ? sceneGroupManager.GetLocalizedInterfaceText("menu", wristButtonLabel) : wristButtonLabel;
             label.alignment = TextAnchor.MiddleCenter;
             label.fontSize = 22;
             label.color = Color.white;
@@ -1599,10 +1672,14 @@ public class HandRadialVirtualSceneMenu : MonoBehaviour
         rect.offsetMax = new Vector2(-horizontalPadding, -verticalPadding);
     }
 
-    private static string GetMenuButtonRawLabel(VirtualSceneMenuButton sceneButton)
+    private string GetMenuButtonRawLabel(VirtualSceneMenuButton sceneButton)
     {
         if (sceneButton == null)
             return string.Empty;
+
+        string localized = GetLocalizedTargetLabel(sceneButton.ZeroBasedIndex);
+        if (!string.IsNullOrWhiteSpace(localized))
+            return NormalizeLabelWhitespace(localized);
 
         if (!string.IsNullOrWhiteSpace(sceneButton.customLabel))
             return NormalizeLabelWhitespace(sceneButton.customLabel);

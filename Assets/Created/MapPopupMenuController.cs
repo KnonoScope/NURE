@@ -338,6 +338,13 @@ public class MapPopupMenuController : MonoBehaviour
 
     private string ResolveButtonLabel(int pointIndex, MapPopupPoint p)
     {
+        if (sceneGroupManager != null && p != null && p.sceneRoot != null)
+        {
+            string localized = sceneGroupManager.GetLocalizedSceneLabel(p.sceneRoot);
+            if (!string.IsNullOrWhiteSpace(localized))
+                return localized;
+        }
+
         if (syncLabelsFromRadialMenu && TryGetRadialLabel(pointIndex, p, out string radialLabel))
             return radialLabel;
 

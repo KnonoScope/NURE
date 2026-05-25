@@ -1238,16 +1238,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -8.860558, y: 2.2375998, z: 54.09063}
-  - {x: -8.810539, y: 2.248128, z: 54.20207}
-  - {x: -8.760746, y: 2.2606397, z: 54.31361}
-  - {x: -8.711178, y: 2.2751348, z: 54.425247}
-  - {x: -8.661834, y: 2.291613, z: 54.53698}
-  - {x: -8.612715, y: 2.310075, z: 54.648815}
-  - {x: -8.56382, y: 2.3305206, z: 54.760746}
-  - {x: -8.515151, y: 2.3529494, z: 54.872776}
-  - {x: -8.466705, y: 2.3773618, z: 54.9849}
-  - {x: -8.418486, y: 2.4037578, z: 55.09713}
-  - {x: -8.37049, y: 2.432137, z: 55.209454}
+  - {x: -8.812204, y: 2.248128, z: 54.202797}
+  - {x: -8.763743, y: 2.2606397, z: 54.31492}
+  - {x: -8.715174, y: 2.2751348, z: 54.426994}
+  - {x: -8.666495, y: 2.291613, z: 54.539017}
+  - {x: -8.617709, y: 2.310075, z: 54.650997}
+  - {x: -8.568815, y: 2.3305206, z: 54.762928}
+  - {x: -8.519813, y: 2.3529494, z: 54.874813}
+  - {x: -8.470702, y: 2.3773618, z: 54.98665}
+  - {x: -8.421483, y: 2.4037578, z: 55.09844}
+  - {x: -8.372155, y: 2.432137, z: 55.210182}
   - {x: -8.32272, y: 2.4624999, z: 55.321877}
   m_Parameters:
     serializedVersion: 3
@@ -3498,16 +3498,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -9.200466, y: 2.14675, z: 52.95057}
-  - {x: -9.288902, y: 2.180278, z: 52.922245}
-  - {x: -9.377416, y: 2.2157896, z: 52.89418}
-  - {x: -9.466005, y: 2.2532847, z: 52.866364}
-  - {x: -9.554672, y: 2.2927632, z: 52.8388}
-  - {x: -9.643416, y: 2.3342254, z: 52.81149}
-  - {x: -9.732238, y: 2.3776705, z: 52.78443}
-  - {x: -9.821136, y: 2.4230995, z: 52.757626}
-  - {x: -9.910111, y: 2.4705122, z: 52.73107}
-  - {x: -9.999163, y: 2.519908, z: 52.704773}
-  - {x: -10.088292, y: 2.5712872, z: 52.678726}
+  - {x: -9.289565, y: 2.180278, z: 52.924423}
+  - {x: -9.378608, y: 2.2157896, z: 52.898094}
+  - {x: -9.467596, y: 2.2532847, z: 52.871586}
+  - {x: -9.556528, y: 2.2927632, z: 52.84489}
+  - {x: -9.645405, y: 2.3342254, z: 52.818016}
+  - {x: -9.734225, y: 2.3776705, z: 52.790955}
+  - {x: -9.82299, y: 2.4230995, z: 52.763714}
+  - {x: -9.911701, y: 2.4705122, z: 52.736294}
+  - {x: -10.000356, y: 2.519908, z: 52.708687}
+  - {x: -10.088954, y: 2.5712872, z: 52.6809}
   - {x: -10.177498, y: 2.62465, z: 52.65293}
   m_Parameters:
     serializedVersion: 3
@@ -10186,7 +10186,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   sceneGroupManager: {fileID: 1011406540}
   sceneRoot: {fileID: 241841397}
-  sceneDisplayName: 'TOMBE A FOSSA '
+  sceneDisplayName: TOMBE A FOSSA
   autoBindLabelComponents: 0
   uiText: {fileID: 699381745}
   tmpText: {fileID: 247485855}
@@ -10944,16 +10944,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -7.9071617, y: 2.2186248, z: 51.51838}
-  - {x: -7.8953705, y: 2.3418007, z: 51.56195}
-  - {x: -7.883379, y: 2.46696, z: 51.605465}
-  - {x: -7.8711867, y: 2.5941029, z: 51.64892}
-  - {x: -7.858794, y: 2.723229, z: 51.69231}
-  - {x: -7.8462005, y: 2.8543386, z: 51.735645}
-  - {x: -7.8334064, y: 2.9874318, z: 51.77892}
-  - {x: -7.8204117, y: 3.1225085, z: 51.822136}
-  - {x: -7.807216, y: 3.2595685, z: 51.865295}
-  - {x: -7.79382, y: 3.398612, z: 51.90839}
-  - {x: -7.7802234, y: 3.5396392, z: 51.95143}
+  - {x: -7.893102, y: 2.3418007, z: 51.56128}
+  - {x: -7.879296, y: 2.46696, z: 51.60426}
+  - {x: -7.8657427, y: 2.5941029, z: 51.64731}
+  - {x: -7.8524423, y: 2.723229, z: 51.690434}
+  - {x: -7.839395, y: 2.8543386, z: 51.73363}
+  - {x: -7.826601, y: 2.9874318, z: 51.776913}
+  - {x: -7.8140597, y: 3.1225085, z: 51.82026}
+  - {x: -7.801772, y: 3.2595685, z: 51.863686}
+  - {x: -7.7897367, y: 3.398612, z: 51.907185}
+  - {x: -7.777955, y: 3.5396392, z: 51.95076}
   - {x: -7.766426, y: 3.6826496, z: 51.994408}
   m_Parameters:
     serializedVersion: 3
@@ -11219,6 +11219,69 @@ MonoBehaviour:
     videoPanelRoot: {fileID: 1286054230}
     videoPlayer: {fileID: 1286054236}
     waitForVideoEnd: 1
+  enableLocalization: 1
+  currentLanguage: 0
+  rememberLanguagePreference: 1
+  showLanguageSelectionOnStart: 1
+  resetToLanguageSelectionOnPause: 1
+  showFirstSceneBehindLanguageSelection: 0
+  activateFirstSceneAfterLanguageSelection: 1
+  localizedScenes:
+  - sceneName: Scena1
+    italianLabel: MAPPA SITO ARCHEOLOGICO
+    englishLabel: ARCHAEOLOGICAL SITE MAP
+    italianAudioClip: {fileID: 8300000, guid: 693722aa9cf68ba4e89ff2b78d78dad2, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234561, type: 3}
+  - sceneName: Scena2
+    italianLabel: CHIESA PALEOCRISTIANA e TOMBE
+    englishLabel: EARLY CHRISTIAN CHURCH AND GRAVES
+    italianAudioClip: {fileID: 8300000, guid: 146e0de3210329241b13d5870e14fd0b, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234567, type: 3}
+  - sceneName: Scena3
+    italianLabel: EPIGRAFE AMOCADA
+    englishLabel: AMOCADA INSCRIPTION
+    italianAudioClip: {fileID: 8300000, guid: 16487085b86e3a841907e61c1a73ed80, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234562, type: 3}
+  - sceneName: Scena4
+    italianLabel: NURAGHE E VILLAGGIO
+    englishLabel: NURAGHE AND VILLAGE
+    italianAudioClip: {fileID: 8300000, guid: d28dccddaac28b340afcd3f54d416ae3, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234563, type: 3}
+  - sceneName: Scena5
+    italianLabel: TOMBE A FOSSA
+    englishLabel: PIT GRAVES
+    italianAudioClip: {fileID: 8300000, guid: 06f47ab1cef2a8446aeff072e3219fa3, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234564, type: 3}
+  - sceneName: Scena6
+    italianLabel: MAUSOLEO E REFRIGERIUM
+    englishLabel: MAUSOLEUM AND REFRIGERIUM
+    italianAudioClip: {fileID: 8300000, guid: 32e6829e951a6a349ad0d319258c5852, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234565, type: 3}
+  - sceneName: Scena7
+    italianLabel: TOMBE A CAMERA
+    englishLabel: CHAMBER TOMBS
+    italianAudioClip: {fileID: 8300000, guid: 35f48e5df4e13d54088029cec964bfa1, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234569, type: 3}
+  - sceneName: Scena8
+    italianLabel: TOMBE A FOSSA E SARCOFAGO
+    englishLabel: PIT GRAVES AND SARCOPHAGUS
+    italianAudioClip: {fileID: 8300000, guid: 89ff32b1f0e1f134e9c2237267f0d7eb, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef0123456a, type: 3}
+  - sceneName: Scena9
+    italianLabel: INTERNO CHIESA PALEOCRISTIANA
+    englishLabel: INSIDE THE EARLY CHRISTIAN CHURCH
+    italianAudioClip: {fileID: 8300000, guid: 79d430bb6dab47643bec63039a0cfaa8, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234568, type: 3}
+  - sceneName: Scena10
+    italianLabel: SANTA LUCIA
+    englishLabel: SAINT LUCIA
+    italianAudioClip: {fileID: 8300000, guid: faab6ab82b8844748a7c731e349cb48c, type: 3}
+    englishAudioClip: {fileID: 8300000, guid: 1d7a8f9c2b3345678a9bcdef01234566, type: 3}
+  languagePanelDistanceFromCamera: 1.25
+  languagePanelSize: {x: 900, y: 520}
+  languagePanelColor: {r: 0.04, g: 0.07, b: 0.09, a: 0.96}
+  languageButtonColor: {r: 0.14, g: 0.36, b: 0.46, a: 0.98}
+  languageTextColor: {r: 0.98, g: 0.96, b: 0.9, a: 1}
   playSequenceOnStart: 1
   stopAudioOnSwitch: 1
   playAudioOnSwitch: 1
@@ -13187,16 +13250,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -9.232822, y: 2.1348474, z: 53.698555}
-  - {x: -9.222327, y: 2.1655529, z: 53.717274}
-  - {x: -9.211957, y: 2.1982417, z: 53.73606}
-  - {x: -9.201709, y: 2.232914, z: 53.754906}
-  - {x: -9.191586, y: 2.2695696, z: 53.77382}
-  - {x: -9.181585, y: 2.308209, z: 53.792793}
-  - {x: -9.171709, y: 2.3488317, z: 53.811836}
-  - {x: -9.161955, y: 2.3914378, z: 53.83094}
-  - {x: -9.152326, y: 2.4360275, z: 53.85011}
-  - {x: -9.142819, y: 2.4826007, z: 53.86934}
-  - {x: -9.133437, y: 2.5311573, z: 53.888638}
+  - {x: -9.22407, y: 2.1655529, z: 53.718178}
+  - {x: -9.215093, y: 2.1982417, z: 53.737682}
+  - {x: -9.20589, y: 2.232914, z: 53.757076}
+  - {x: -9.196463, y: 2.2695696, z: 53.77635}
+  - {x: -9.1868105, y: 2.308209, z: 53.795506}
+  - {x: -9.176934, y: 2.3488317, z: 53.814545}
+  - {x: -9.166832, y: 2.3914378, z: 53.83347}
+  - {x: -9.156507, y: 2.4360275, z: 53.852276}
+  - {x: -9.145955, y: 2.4826007, z: 53.870968}
+  - {x: -9.1351795, y: 2.5311573, z: 53.889538}
   - {x: -9.124178, y: 2.5816972, z: 53.907997}
   m_Parameters:
     serializedVersion: 3
@@ -14879,16 +14942,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -9.261084, y: 2.3106248, z: 53.63668}
-  - {x: -9.283102, y: 2.3434212, z: 53.608746}
-  - {x: -9.305152, y: 2.378201, z: 53.580833}
-  - {x: -9.32723, y: 2.4149642, z: 53.552948}
-  - {x: -9.34934, y: 2.4537108, z: 53.525085}
-  - {x: -9.371479, y: 2.494441, z: 53.497246}
-  - {x: -9.393648, y: 2.5371544, z: 53.46943}
-  - {x: -9.415848, y: 2.5818517, z: 53.441635}
-  - {x: -9.438078, y: 2.6285322, z: 53.41387}
-  - {x: -9.460337, y: 2.6771963, z: 53.386127}
-  - {x: -9.482626, y: 2.7278438, z: 53.35841}
+  - {x: -9.282687, y: 2.3434212, z: 53.608414}
+  - {x: -9.304404, y: 2.378201, z: 53.58024}
+  - {x: -9.326235, y: 2.4149642, z: 53.552155}
+  - {x: -9.348178, y: 2.4537108, z: 53.52416}
+  - {x: -9.370234, y: 2.494441, z: 53.49625}
+  - {x: -9.392403, y: 2.5371544, z: 53.468437}
+  - {x: -9.414685, y: 2.5818517, z: 53.44071}
+  - {x: -9.43708, y: 2.6285322, z: 53.413074}
+  - {x: -9.45959, y: 2.6771963, z: 53.385532}
+  - {x: -9.482211, y: 2.7278438, z: 53.358078}
   - {x: -9.504946, y: 2.7804747, z: 53.33071}
   m_Parameters:
     serializedVersion: 3
@@ -15467,7 +15530,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[1].x
-      value: -10.05146
+      value: -10.051805
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[1].y
@@ -15475,11 +15538,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[1].z
-      value: 52.803185
+      value: 52.80424
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[2].x
-      value: -10.169722
+      value: -10.170341
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[2].y
@@ -15487,11 +15550,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[2].z
-      value: 52.76393
+      value: 52.765835
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[3].x
-      value: -10.288042
+      value: -10.288868
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[3].y
@@ -15499,11 +15562,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[3].z
-      value: 52.724865
+      value: 52.7274
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[4].x
-      value: -10.406424
+      value: -10.407387
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[4].y
@@ -15511,11 +15574,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[4].z
-      value: 52.68598
+      value: 52.688942
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[5].x
-      value: -10.524865
+      value: -10.525897
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[5].y
@@ -15523,11 +15586,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[5].z
-      value: 52.647285
+      value: 52.65046
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[6].x
-      value: -10.643367
+      value: -10.644399
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[6].y
@@ -15535,11 +15598,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[6].z
-      value: 52.608772
+      value: 52.611946
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[7].x
-      value: -10.7619295
+      value: -10.762893
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[7].y
@@ -15547,11 +15610,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[7].z
-      value: 52.570446
+      value: 52.57341
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[8].x
-      value: -10.880552
+      value: -10.881377
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[8].y
@@ -15559,11 +15622,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[8].z
-      value: 52.532307
+      value: 52.534847
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[9].x
-      value: -10.999234
+      value: -10.999853
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[9].y
@@ -15571,7 +15634,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[9].z
-      value: 52.49435
+      value: 52.496258
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Parameters.widthMultiplier
@@ -15579,7 +15642,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[10].x
-      value: -11.117977
+      value: -11.118321
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[10].y
@@ -15587,7 +15650,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[10].z
-      value: 52.45658
+      value: 52.45764
       objectReference: {fileID: 0}
     - target: {fileID: 5869853722540710621, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
       propertyPath: m_Positions.Array.data[11].x
@@ -16067,16 +16130,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -8.249083, y: 2.2445, z: 54.44494}
-  - {x: -8.221008, y: 2.292612, z: 54.542725}
-  - {x: -8.193053, y: 2.3427079, z: 54.640545}
-  - {x: -8.165217, y: 2.3947868, z: 54.738403}
-  - {x: -8.137501, y: 2.4488494, z: 54.83629}
-  - {x: -8.109904, y: 2.5048957, z: 54.93421}
-  - {x: -8.082425, y: 2.562925, z: 55.032166}
-  - {x: -8.055067, y: 2.6229382, z: 55.13015}
-  - {x: -8.027828, y: 2.6849349, z: 55.228172}
-  - {x: -8.000708, y: 2.7489147, z: 55.32623}
-  - {x: -7.9737067, y: 2.814878, z: 55.424316}
+  - {x: -8.221306, y: 2.292612, z: 54.54281}
+  - {x: -8.193589, y: 2.3427079, z: 54.640697}
+  - {x: -8.165932, y: 2.3947868, z: 54.7386}
+  - {x: -8.138334, y: 2.4488494, z: 54.83652}
+  - {x: -8.110796, y: 2.5048957, z: 54.93446}
+  - {x: -8.083319, y: 2.562925, z: 55.032413}
+  - {x: -8.0559, y: 2.6229382, z: 55.130386}
+  - {x: -8.028542, y: 2.6849349, z: 55.22837}
+  - {x: -8.001243, y: 2.7489147, z: 55.326378}
+  - {x: -7.9740043, y: 2.814878, z: 55.4244}
   - {x: -7.946825, y: 2.882825, z: 55.522438}
   m_Parameters:
     serializedVersion: 3
@@ -20017,16 +20080,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -9.987249, y: 2.2512383, z: 54.00328}
-  - {x: -9.974762, y: 2.26553, z: 54.01234}
-  - {x: -9.962438, y: 2.2818053, z: 54.02159}
-  - {x: -9.950277, y: 2.300064, z: 54.031036}
-  - {x: -9.938281, y: 2.3203063, z: 54.04067}
-  - {x: -9.926448, y: 2.3425317, z: 54.05049}
-  - {x: -9.914779, y: 2.366741, z: 54.06051}
-  - {x: -9.903274, y: 2.3929334, z: 54.070713}
-  - {x: -9.891932, y: 2.4211094, z: 54.08111}
-  - {x: -9.8807535, y: 2.451269, z: 54.091698}
-  - {x: -9.86974, y: 2.483412, z: 54.102474}
+  - {x: -9.976371, y: 2.26553, z: 54.014214}
+  - {x: -9.965334, y: 2.2818053, z: 54.024967}
+  - {x: -9.95414, y: 2.300064, z: 54.035534}
+  - {x: -9.942786, y: 2.3203063, z: 54.045918}
+  - {x: -9.931275, y: 2.3425317, z: 54.056118}
+  - {x: -9.919606, y: 2.366741, z: 54.06613}
+  - {x: -9.907779, y: 2.3929334, z: 54.075962}
+  - {x: -9.895794, y: 2.4211094, z: 54.08561}
+  - {x: -9.88365, y: 2.451269, z: 54.09507}
+  - {x: -9.871348, y: 2.483412, z: 54.104347}
   - {x: -9.858889, y: 2.5175383, z: 54.11344}
   m_Parameters:
     serializedVersion: 3
@@ -22014,16 +22077,16 @@ LineRenderer:
   m_SortingOrder: 0
   m_Positions:
   - {x: -8.368725, y: 2.1374593, z: 53.67363}
-  - {x: -8.305431, y: 2.2404056, z: 53.646267}
-  - {x: -8.24216, y: 2.3453352, z: 53.618855}
-  - {x: -8.178912, y: 2.4522486, z: 53.591385}
-  - {x: -8.115685, y: 2.5611453, z: 53.56387}
-  - {x: -8.052482, y: 2.6720254, z: 53.536304}
-  - {x: -7.9893, y: 2.784889, z: 53.508686}
-  - {x: -7.9261403, y: 2.899736, z: 53.481014}
-  - {x: -7.8630033, y: 3.0165668, z: 53.453293}
-  - {x: -7.799889, y: 3.1353807, z: 53.425526}
-  - {x: -7.736797, y: 3.2561784, z: 53.3977}
+  - {x: -8.30597, y: 2.2404056, z: 53.645035}
+  - {x: -8.24313, y: 2.3453352, z: 53.61664}
+  - {x: -8.180203, y: 2.4522486, z: 53.588432}
+  - {x: -8.117193, y: 2.5611453, z: 53.560425}
+  - {x: -8.054097, y: 2.6720254, z: 53.532608}
+  - {x: -7.9909153, y: 2.784889, z: 53.50499}
+  - {x: -7.9276485, y: 2.899736, z: 53.47757}
+  - {x: -7.864296, y: 3.0165668, z: 53.45034}
+  - {x: -7.8008585, y: 3.1353807, z: 53.42331}
+  - {x: -7.737335, y: 3.2561784, z: 53.39647}
   - {x: -7.673727, y: 3.3789592, z: 53.369827}
   m_Parameters:
     serializedVersion: 3
