@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 
 public static class CodexStoreBuild
@@ -45,7 +46,7 @@ public static class CodexStoreBuild
         Console.WriteLine("Android APK built at " + outputPath);
     }
 
-    static void ConfigureSigning()
+    internal static void ConfigureSigning()
     {
         var keystorePath = Path.GetFullPath(KeystoreRelativePath);
         if (!File.Exists(keystorePath))
@@ -53,15 +54,15 @@ public static class CodexStoreBuild
             throw new FileNotFoundException("Missing Android keystore.", keystorePath);
         }
 
-        var password = ReadKeystorePassword();
+        var passwords = ReadKeystorePasswords();
         PlayerSettings.Android.useCustomKeystore = true;
         PlayerSettings.Android.keystoreName = keystorePath;
-        PlayerSettings.Android.keystorePass = password;
+        PlayerSettings.Android.keystorePass = passwords.keystorePassword;
         PlayerSettings.Android.keyaliasName = KeyAlias;
-        PlayerSettings.Android.keyaliasPass = password;
+        PlayerSettings.Android.keyaliasPass = passwords.keyAliasPassword;
     }
 
-    static string ReadKeystorePassword()
+    static (string keystorePassword, string keyAliasPassword) ReadKeystorePasswords()
     {
         var passwordPath = Path.GetFullPath(KeystorePasswordFile);
         if (!File.Exists(passwordPath))
@@ -69,14 +70,40 @@ public static class CodexStoreBuild
             throw new FileNotFoundException("Missing Android keystore password file.", passwordPath);
         }
 
-        const string prefix = "Keystore password: ";
-        var password = File.ReadLines(passwordPath)
-            .FirstOrDefault(line => line.StartsWith(prefix, StringComparison.Ordinal));
-        if (string.IsNullOrWhiteSpace(password))
+        string keystorePassword = ReadPasswordValue(passwordPath, "Keystore password: ");
+        string keyAliasPassword = ReadPasswordValue(passwordPath, "Key alias password: ");
+
+        if (string.IsNullOrWhiteSpace(keystorePassword))
         {
             throw new InvalidOperationException("Keystore password not found in " + passwordPath);
         }
 
-        return password.Substring(prefix.Length).Trim();
+        if (string.IsNullOrWhiteSpace(keyAliasPassword))
+            keyAliasPassword = keystorePassword;
+
+        return (keystorePassword, keyAliasPassword);
+    }
+
+    static string ReadPasswordValue(string passwordPath, string prefix)
+    {
+        var password = File.ReadLines(passwordPath)
+            .FirstOrDefault(line => line.StartsWith(prefix, StringComparison.Ordinal));
+
+        return string.IsNullOrWhiteSpace(password)
+            ? string.Empty
+            : password.Substring(prefix.Length).Trim();
+    }
+}
+
+public sealed class CodexAndroidSigningPreprocessor : IPreprocessBuildWithReport
+{
+    public int callbackOrder => 0;
+
+    public void OnPreprocessBuild(BuildReport report)
+    {
+        if (report == null || report.summary.platform != BuildTarget.Android)
+            return;
+
+        CodexStoreBuild.ConfigureSigning();
     }
 }

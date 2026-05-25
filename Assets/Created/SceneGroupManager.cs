@@ -25,17 +25,18 @@ public class SceneGroupManager : MonoBehaviour
     private const string ForcedScene9Name = "Scena9";
     private const string ForcedScene10Name = "Scena10";
     private const string DefaultGlobalSkyboxTextureResourceName = "rosendal_plains_2_4k";
-    private const int RuntimeSkyDomeLongitudeSegments = 128;
-    private const int RuntimeSkyDomeLatitudeSegments = 64;
+    private const int RuntimeSkyDomeLongitudeSegments = 64;
+    private const int RuntimeSkyDomeLatitudeSegments = 32;
     private const float ContinuousSceneRuleRefreshInterval = 0.2f;
     private const float CameraCacheRefreshInterval = 0.75f;
     private const int DefaultVideoRenderTextureMaxSize = 4096;
     private const int MobileVideoRenderTextureMaxSize = 2048;
-    private const int MobileSceneSpawnDissolveMaxRenderers = 24;
+    private const int MobileSceneSpawnDissolveMaxRenderers = 8;
     private const float MobileSceneSpawnDissolveDuration = 1.25f;
     private const float MobileSceneSpawnDissolveMinBoundsSize = 0.35f;
-    private const float LanguageSphereScale = 0.24f;
-    private const float LanguageSphereColliderRadius = 0.72f;
+    private const float LanguageFlagPlaneWidth = 0.44f;
+    private const float LanguageFlagPlaneHeight = 0.26f;
+    private const float LanguageFlagPlaneColliderDepth = 0.06f;
     private const int LanguageFlagTextureWidth = 1024;
     private const int LanguageFlagTextureHeight = 512;
     private const string Scene7DelayedDissolveSceneName = "Scena7";
@@ -103,6 +104,7 @@ public class SceneGroupManager : MonoBehaviour
     public bool showFirstSceneBehindLanguageSelection = false;
     [Tooltip("Se true, quando si sceglie la lingua parte sempre la prima scena della lista.")]
     public bool activateFirstSceneAfterLanguageSelection = true;
+    public bool disableInitialSceneDissolveAfterLanguageSelection = true;
     public List<LocalizedSceneContent> localizedScenes = new List<LocalizedSceneContent>();
 
     [Header("Language Selection UI")]
@@ -111,6 +113,8 @@ public class SceneGroupManager : MonoBehaviour
     public Color languagePanelColor = new Color(0.04f, 0.07f, 0.09f, 0.96f);
     public Color languageButtonColor = new Color(0.14f, 0.36f, 0.46f, 0.98f);
     public Color languageTextColor = new Color(0.98f, 0.96f, 0.9f, 1f);
+    public Texture2D italianLanguageFlagTexture;
+    public Texture2D englishLanguageFlagTexture;
 
     public int LanguageVersion { get; private set; }
 
@@ -336,6 +340,7 @@ public class SceneGroupManager : MonoBehaviour
     [Header("Scene Spawn Dissolve FX")]
     [Tooltip("Se true, all'attivazione di una scena virtuale applica un dissolve URP temporaneo ai renderer della scena.")]
     public bool enableSceneSpawnDissolveFx = true;
+    public bool disableSceneSpawnDissolveOnMobile = true;
 
     [Range(1, 256)]
     [Tooltip("Numero massimo di renderer coinvolti nel dissolve per ogni cambio scena.")]
@@ -447,6 +452,8 @@ public class SceneGroupManager : MonoBehaviour
     private bool _hasWarnedMissingScene6TorchShader;
     private bool _hasShownStartupScene1ViewBlocker;
     private Coroutine _startupViewBlockerRoutine;
+    private Coroutine _languagePreferenceSaveRoutine;
+    private Coroutine _localizedRuntimeUiRefreshRoutine;
     private Transform _startupViewBlockerTransform;
     private CanvasGroup _startupViewBlockerCanvasGroup;
     private SceneActivationUrpDissolveVfx _sceneSpawnDissolveVfx;
@@ -460,6 +467,7 @@ public class SceneGroupManager : MonoBehaviour
     private bool _waitingForLanguageSelection;
     private bool _restartLanguageSelectionOnResume;
     private bool _suppressScene1ViewBlocker;
+    private bool _suppressNextSceneSpawnDissolve;
     private bool _languageSelectionFixedInWorld;
     private float _lastLanguageSelectionFallbackPressTime = -10f;
     private bool _previousLanguageSelectionFallbackPressed;
@@ -470,6 +478,7 @@ public class SceneGroupManager : MonoBehaviour
     private Material _englishLanguageMaterial;
     private Texture2D _italianLanguageTexture;
     private Texture2D _englishLanguageTexture;
+    private Mesh _languageFlagPlaneMesh;
     private readonly List<LanguageRendererState> _languageHiddenRenderers = new List<LanguageRendererState>(256);
     private readonly List<LanguageColliderState> _languageHiddenColliders = new List<LanguageColliderState>(256);
 
@@ -719,22 +728,50 @@ public class SceneGroupManager : MonoBehaviour
         if (rememberLanguagePreference)
         {
             PlayerPrefs.SetString("NURE.Language", currentLanguage.ToString());
-            PlayerPrefs.Save();
+            QueueLanguagePreferenceSave();
         }
 
         DestroyLanguageSelection();
         RestoreObjectsHiddenForLanguageSelection();
-        RefreshLocalizedRuntimeUI();
+        ScheduleLocalizedRuntimeUIRefresh();
 
         if (activateFirstSceneAfterLanguageSelection && scenes != null && scenes.Count > 0 && scenes[0] != null && scenes[0].root != null)
         {
             _index = 0;
-            ActivateScene(scenes[0].root);
+            if (disableInitialSceneDissolveAfterLanguageSelection)
+                _suppressNextSceneSpawnDissolve = true;
+
+            bool previousSuppressScene1ViewBlocker = _suppressScene1ViewBlocker;
+            _suppressScene1ViewBlocker = true;
+            try
+            {
+                ActivateScene(scenes[0].root);
+            }
+            finally
+            {
+                _suppressScene1ViewBlocker = previousSuppressScene1ViewBlocker;
+            }
         }
         else if (playSequenceOnStart)
         {
             PlayFromStart();
         }
+    }
+
+    private void QueueLanguagePreferenceSave()
+    {
+        if (_languagePreferenceSaveRoutine != null)
+            StopCoroutine(_languagePreferenceSaveRoutine);
+
+        _languagePreferenceSaveRoutine = StartCoroutine(SaveLanguagePreferenceDeferred());
+    }
+
+    private IEnumerator SaveLanguagePreferenceDeferred()
+    {
+        yield return null;
+        yield return new WaitForSecondsRealtime(2f);
+        PlayerPrefs.Save();
+        _languagePreferenceSaveRoutine = null;
     }
 
     public string GetLocalizedSceneLabel(GameObject sceneRootOrChild)
@@ -972,7 +1009,10 @@ public class SceneGroupManager : MonoBehaviour
         _waitingForLanguageSelection = false;
         _languageSelectionFixedInWorld = false;
         if (_languageSelectionRoot != null)
+        {
+            _languageSelectionRoot.SetActive(false);
             Destroy(_languageSelectionRoot);
+        }
 
         ReleaseRuntimeLanguageAssets();
 
@@ -992,11 +1032,32 @@ public class SceneGroupManager : MonoBehaviour
             Destroy(_italianLanguageTexture);
         if (_englishLanguageTexture != null)
             Destroy(_englishLanguageTexture);
+        if (_languageFlagPlaneMesh != null)
+            Destroy(_languageFlagPlaneMesh);
 
         _italianLanguageMaterial = null;
         _englishLanguageMaterial = null;
         _italianLanguageTexture = null;
         _englishLanguageTexture = null;
+        _languageFlagPlaneMesh = null;
+    }
+
+    private Texture ResolveLanguageFlagTexture(NureLanguage language)
+    {
+        Texture2D configuredTexture = language == NureLanguage.Italian
+            ? italianLanguageFlagTexture
+            : englishLanguageFlagTexture;
+
+        if (configuredTexture != null)
+            return configuredTexture;
+
+        Texture2D runtimeTexture = CreateLanguageFlagTexture(language);
+        if (language == NureLanguage.Italian)
+            _italianLanguageTexture = runtimeTexture;
+        else
+            _englishLanguageTexture = runtimeTexture;
+
+        return runtimeTexture;
     }
 
     private void HideObjectsForLanguageSelection()
@@ -1008,6 +1069,8 @@ public class SceneGroupManager : MonoBehaviour
         {
             Renderer renderer = renderers[i];
             if (renderer == null || !renderer.enabled)
+                continue;
+            if (!renderer.gameObject.activeInHierarchy)
                 continue;
             if (ShouldKeepVisibleDuringLanguageSelection(renderer.transform))
                 continue;
@@ -1025,6 +1088,8 @@ public class SceneGroupManager : MonoBehaviour
         {
             Collider collider = colliders[i];
             if (collider == null || !collider.enabled)
+                continue;
+            if (!collider.gameObject.activeInHierarchy)
                 continue;
             if (ShouldKeepVisibleDuringLanguageSelection(collider.transform))
                 continue;
@@ -1157,13 +1222,21 @@ public class SceneGroupManager : MonoBehaviour
         _languageSelectionTransform.SetPositionAndRotation(center, Quaternion.LookRotation(forward, Vector3.up));
         _languageSelectionTransform.localScale = Vector3.one;
 
-        _italianLanguageTexture = CreateLanguageFlagTexture(NureLanguage.Italian);
-        _englishLanguageTexture = CreateLanguageFlagTexture(NureLanguage.English);
-        _italianLanguageMaterial = CreateRuntimeLanguageMaterial(Color.white, _italianLanguageTexture);
-        _englishLanguageMaterial = CreateRuntimeLanguageMaterial(Color.white, _englishLanguageTexture);
+        Texture italianTexture = ResolveLanguageFlagTexture(NureLanguage.Italian);
+        Texture englishTexture = ResolveLanguageFlagTexture(NureLanguage.English);
+        _italianLanguageMaterial = CreateRuntimeLanguageMaterial(Color.white, italianTexture);
+        _englishLanguageMaterial = CreateRuntimeLanguageMaterial(Color.white, englishTexture);
 
-        _italianLanguageButton = CreateLanguageButton3D("Italiano_Sfera", NureLanguage.Italian, new Vector3(-0.34f, 0f, 0f), _italianLanguageMaterial, PrimitiveType.Sphere);
-        _englishLanguageButton = CreateLanguageButton3D("English_Sfera", NureLanguage.English, new Vector3(0.34f, 0f, 0f), _englishLanguageMaterial, PrimitiveType.Sphere);
+        _italianLanguageButton = CreateLanguageButton3D(
+            "Italiano_Bandiera",
+            NureLanguage.Italian,
+            new Vector3(-0.31f, 0f, 0f),
+            _italianLanguageMaterial);
+        _englishLanguageButton = CreateLanguageButton3D(
+            "English_Flag",
+            NureLanguage.English,
+            new Vector3(0.31f, 0f, 0f),
+            _englishLanguageMaterial);
     }
 
     private TextMesh CreateLanguageText3D(string name, string text, Vector3 localPosition, float characterSize, FontStyle style)
@@ -1190,24 +1263,22 @@ public class SceneGroupManager : MonoBehaviour
         return mesh;
     }
 
-    private NureLanguageSelectionButton CreateLanguageButton3D(string objectName, NureLanguage language, Vector3 localPosition, Material buttonMaterial, PrimitiveType primitiveType)
+    private NureLanguageSelectionButton CreateLanguageButton3D(string objectName, NureLanguage language, Vector3 localPosition, Material buttonMaterial)
     {
-        GameObject buttonRoot = GameObject.CreatePrimitive(primitiveType);
+        GameObject buttonRoot = new GameObject(objectName, typeof(MeshFilter), typeof(MeshRenderer), typeof(BoxCollider));
         buttonRoot.name = objectName;
         buttonRoot.transform.SetParent(_languageSelectionTransform, false);
         buttonRoot.transform.localPosition = localPosition;
         buttonRoot.transform.localRotation = Quaternion.identity;
-        buttonRoot.transform.localScale = Vector3.one * LanguageSphereScale;
+        buttonRoot.transform.localScale = new Vector3(LanguageFlagPlaneWidth, LanguageFlagPlaneHeight, 1f);
 
-        BoxCollider box = buttonRoot.GetComponent<BoxCollider>();
-        if (box != null)
-            Destroy(box);
+        MeshFilter meshFilter = buttonRoot.GetComponent<MeshFilter>();
+        if (meshFilter != null)
+            meshFilter.sharedMesh = EnsureLanguageFlagPlaneMesh();
 
-        SphereCollider sphereCollider = buttonRoot.GetComponent<SphereCollider>();
-        if (sphereCollider == null)
-            sphereCollider = buttonRoot.AddComponent<SphereCollider>();
-        sphereCollider.radius = LanguageSphereColliderRadius;
-        sphereCollider.isTrigger = false;
+        BoxCollider boxCollider = buttonRoot.GetComponent<BoxCollider>();
+        boxCollider.size = new Vector3(1f, 1f, LanguageFlagPlaneColliderDepth);
+        boxCollider.isTrigger = false;
 
         Rigidbody rb = buttonRoot.GetComponent<Rigidbody>();
         if (rb == null)
@@ -1227,12 +1298,42 @@ public class SceneGroupManager : MonoBehaviour
             languageButton = buttonRoot.AddComponent<NureLanguageSelectionButton>();
 
         languageButton.Configure(this, language, player);
-        languageButton.worldColliderSize = Vector3.one * (LanguageSphereColliderRadius * 2f);
+        languageButton.worldColliderSize = new Vector3(1f, 1f, LanguageFlagPlaneColliderDepth);
         languageButton.pinchPressDistance = 0.055f;
         languageButton.pinchReleaseDistance = 0.075f;
-        languageButton.pinchTargetPadding = 0.08f;
+        languageButton.pinchTargetPadding = 0.06f;
         languageButton.RefreshInteractableShape();
         return languageButton;
+    }
+
+    private Mesh EnsureLanguageFlagPlaneMesh()
+    {
+        if (_languageFlagPlaneMesh != null)
+            return _languageFlagPlaneMesh;
+
+        _languageFlagPlaneMesh = new Mesh
+        {
+            name = "Runtime_LanguageFlagPlane"
+        };
+
+        _languageFlagPlaneMesh.vertices = new[]
+        {
+            new Vector3(-0.5f, -0.5f, 0f),
+            new Vector3(0.5f, -0.5f, 0f),
+            new Vector3(0.5f, 0.5f, 0f),
+            new Vector3(-0.5f, 0.5f, 0f)
+        };
+        _languageFlagPlaneMesh.uv = new[]
+        {
+            new Vector2(0f, 0f),
+            new Vector2(1f, 0f),
+            new Vector2(1f, 1f),
+            new Vector2(0f, 1f)
+        };
+        _languageFlagPlaneMesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+        _languageFlagPlaneMesh.RecalculateBounds();
+        _languageFlagPlaneMesh.RecalculateNormals();
+        return _languageFlagPlaneMesh;
     }
 
     private void UpdateLanguageSelectionFallbackInput()
@@ -1560,7 +1661,7 @@ public class SceneGroupManager : MonoBehaviour
 
         Texture2D texture = new Texture2D(LanguageFlagTextureWidth, LanguageFlagTextureHeight, TextureFormat.RGBA32, false, false);
         texture.name = language == NureLanguage.Italian ? "Runtime_ItalianFlag_Texture" : "Runtime_EnglishFlag_Texture";
-        texture.wrapMode = TextureWrapMode.Repeat;
+        texture.wrapMode = TextureWrapMode.Clamp;
         texture.filterMode = FilterMode.Bilinear;
         texture.anisoLevel = 2;
         texture.SetPixels32(pixels);
@@ -1644,11 +1745,15 @@ public class SceneGroupManager : MonoBehaviour
             material.SetColor("_Color", tint);
         if (texture != null)
         {
+            texture.wrapMode = TextureWrapMode.Clamp;
+
             if (material.HasProperty("_BaseMap"))
                 material.SetTexture("_BaseMap", texture);
             if (material.HasProperty("_MainTex"))
                 material.SetTexture("_MainTex", texture);
         }
+        if (material.HasProperty("_Cull"))
+            material.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
 
         return material;
     }
@@ -1789,6 +1894,21 @@ public class SceneGroupManager : MonoBehaviour
             if (popups[i] != null)
                 popups[i].SyncAll();
         }
+    }
+
+    private void ScheduleLocalizedRuntimeUIRefresh()
+    {
+        if (_localizedRuntimeUiRefreshRoutine != null)
+            StopCoroutine(_localizedRuntimeUiRefreshRoutine);
+
+        _localizedRuntimeUiRefreshRoutine = StartCoroutine(RefreshLocalizedRuntimeUIDeferred());
+    }
+
+    private IEnumerator RefreshLocalizedRuntimeUIDeferred()
+    {
+        yield return null;
+        RefreshLocalizedRuntimeUI();
+        _localizedRuntimeUiRefreshRoutine = null;
     }
 
     // --- API PUBBLICA ---
@@ -2534,7 +2654,21 @@ public class SceneGroupManager : MonoBehaviour
 
     private void TryPlaySceneSpawnDissolveFx(VirtualScene cfg)
     {
-        if (cfg == null || cfg.root == null || !enableSceneSpawnDissolveFx)
+        if (_suppressNextSceneSpawnDissolve)
+        {
+            _suppressNextSceneSpawnDissolve = false;
+            StopScene7DelayedDissolve(restoreTarget: true);
+
+            if (_sceneSpawnDissolveVfx != null)
+                _sceneSpawnDissolveVfx.StopAndClear();
+
+            return;
+        }
+
+        if (cfg == null
+            || cfg.root == null
+            || !enableSceneSpawnDissolveFx
+            || (disableSceneSpawnDissolveOnMobile && Application.isMobilePlatform))
         {
             StopScene7DelayedDissolve(restoreTarget: true);
 
