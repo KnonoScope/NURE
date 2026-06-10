@@ -102,6 +102,8 @@ public class SceneGroupManager : MonoBehaviour
     public bool showLanguageSelectionOnStart = true;
     public bool resetToLanguageSelectionOnPause = true;
     public bool showFirstSceneBehindLanguageSelection = false;
+    [Tooltip("Se true, la prima scena viene attivata mentre il menu lingua e' visibile, poi nascosta fino alla scelta. Evita il picco di SetActive subito dopo il click lingua.")]
+    public bool preactivateFirstSceneDuringLanguageSelection = true;
     [Tooltip("Se true, quando si sceglie la lingua parte sempre la prima scena della lista.")]
     public bool activateFirstSceneAfterLanguageSelection = true;
     public bool disableInitialSceneDissolveAfterLanguageSelection = true;
@@ -416,9 +418,22 @@ public class SceneGroupManager : MonoBehaviour
     [Range(0.01f, 0.5f)]
     public float startupScene1UnblockFadeSeconds = 0.12f;
 
+    [Header("Language Selection Smooth Start")]
+    [Range(16, 2048)]
+    [Tooltip("Numero massimo di renderer/collider ripristinati per frame dopo la scelta lingua.")]
+    public int languageSelectionRestoreComponentsPerFrame = 128;
+
+    [Range(0.25f, 8f)]
+    [Tooltip("Budget massimo in millisecondi usato ogni frame per ripristinare oggetti nascosti dopo la scelta lingua.")]
+    public float languageSelectionRestoreFrameBudgetMs = 2f;
+
+    [Range(0f, 0.3f)]
+    [Tooltip("Pausa minima del blocker nero dopo il ripristino, prima del fade-out.")]
+    public float languageSelectionPostRestoreHoldSeconds = 0.03f;
+
     [Header("Language Selection Preload")]
     [Tooltip("Se true, durante la selezione lingua scalda scene, shader, materiali, mesh, audio e video prima dell'avvio esperienza.")]
-    public bool preloadExperienceDuringLanguageSelection = true;
+    public bool preloadExperienceDuringLanguageSelection = false;
 
     [Tooltip("Se true, se l'utente sceglie una lingua mentre il preload e' in corso, l'avvio aspetta la fine del preload.")]
     public bool waitForLanguageSelectionPreloadBeforeStart = true;
@@ -439,13 +454,13 @@ public class SceneGroupManager : MonoBehaviour
     public int preloadRenderTextureSize = 96;
 
     [Tooltip("Se true, esegue Shader.WarmupAllShaders durante la selezione lingua.")]
-    public bool preloadWarmupShaders = true;
+    public bool preloadWarmupShaders = false;
 
     [Tooltip("Se true, renderizza ogni scena una volta su RenderTexture nascosta per forzare upload/compilazione GPU prima dell'esperienza.")]
-    public bool preloadRenderSceneOnce = true;
+    public bool preloadRenderSceneOnce = false;
 
     [Tooltip("Se true, chiama Prepare sui VideoPlayer trovati durante il warmup.")]
-    public bool preloadPrepareVideos = true;
+    public bool preloadPrepareVideos = false;
 
     private int _index = -1;
     private Coroutine _sequenceRoutine;
@@ -485,6 +500,7 @@ public class SceneGroupManager : MonoBehaviour
     private Coroutine _startupViewBlockerRoutine;
     private Coroutine _languagePreferenceSaveRoutine;
     private Coroutine _localizedRuntimeUiRefreshRoutine;
+    private Coroutine _languageSelectionCompletionRoutine;
     private Coroutine _languageSelectionPreloadRoutine;
     private Coroutine _queuedLanguageSelectionRoutine;
     private Transform _startupViewBlockerTransform;
@@ -568,6 +584,14 @@ public class SceneGroupManager : MonoBehaviour
 
     private void Awake()
     {
+        if (Application.isMobilePlatform && !Debug.isDebugBuild)
+        {
+            preloadExperienceDuringLanguageSelection = false;
+            preloadWarmupShaders = false;
+            preloadRenderSceneOnce = false;
+            preloadPrepareVideos = false;
+        }
+
         // Hard lock richiesto: i GO target sono forzati dalla lista interna delle Rune da nascondere.
         scene1Name = ForcedScene1Name;
         globalObjectName = ForcedToggleObjectNames[0];
@@ -724,6 +748,7 @@ public class SceneGroupManager : MonoBehaviour
         StopScene8ChurchDelayedFade(restoreState: true);
         StopScene1PoseRoutine();
         StopAndDestroyStartupViewBlocker();
+        StopLanguageSelectionCompletion();
         StopLanguageSelectionPreload();
         DestroyLanguageSelection();
         StopEpigrafeEntrance();
@@ -783,6 +808,16 @@ public class SceneGroupManager : MonoBehaviour
 
     private void CompleteLanguageSelection(NureLanguage language)
     {
+        if (_languageSelectionCompletionRoutine != null)
+            return;
+
+        _languageSelectionCompletionRoutine = StartCoroutine(CompleteLanguageSelectionRoutine(language));
+    }
+
+    private IEnumerator CompleteLanguageSelectionRoutine(NureLanguage language)
+    {
+        _languageSelectionInputLockedForPreload = true;
+
         currentLanguage = language;
         LanguageVersion++;
         LanguageChanged?.Invoke();
@@ -793,31 +828,29 @@ public class SceneGroupManager : MonoBehaviour
             QueueLanguagePreferenceSave();
         }
 
+        bool transitionBlockerVisible = ShowLanguageSelectionTransitionBlocker();
+
         DestroyLanguageSelection();
-        RestoreObjectsHiddenForLanguageSelection();
+        yield return null;
+
         ScheduleLocalizedRuntimeUIRefresh();
 
-        if (activateFirstSceneAfterLanguageSelection && scenes != null && scenes.Count > 0 && scenes[0] != null && scenes[0].root != null)
+        if (activateFirstSceneAfterLanguageSelection && TryGetFirstConfiguredScene(out VirtualScene firstScene))
         {
-            _index = 0;
-            if (disableInitialSceneDissolveAfterLanguageSelection)
-                _suppressNextSceneSpawnDissolve = true;
+            yield return ActivateFirstSceneAfterLanguageSelectionRoutine(firstScene);
+        }
+        else
+        {
+            yield return RestoreObjectsHiddenForLanguageSelectionRoutine();
 
-            bool previousSuppressScene1ViewBlocker = _suppressScene1ViewBlocker;
-            _suppressScene1ViewBlocker = true;
-            try
-            {
-                ActivateScene(scenes[0].root);
-            }
-            finally
-            {
-                _suppressScene1ViewBlocker = previousSuppressScene1ViewBlocker;
-            }
+            if (playSequenceOnStart)
+                PlayFromStart();
         }
-        else if (playSequenceOnStart)
-        {
-            PlayFromStart();
-        }
+
+        if (transitionBlockerVisible)
+            FadeLanguageSelectionTransitionBlocker();
+
+        _languageSelectionCompletionRoutine = null;
     }
 
     private bool QueueLanguageSelectionUntilPreloadCompletes(NureLanguage language)
@@ -855,6 +888,82 @@ public class SceneGroupManager : MonoBehaviour
         NureLanguage queuedLanguage = _queuedLanguageAfterPreload;
         _hasQueuedLanguageAfterPreload = false;
         CompleteLanguageSelection(queuedLanguage);
+    }
+
+    private bool TryGetFirstConfiguredScene(out VirtualScene cfg)
+    {
+        cfg = null;
+
+        if (scenes == null || scenes.Count == 0)
+            return false;
+
+        cfg = scenes[0];
+        return cfg != null && cfg.root != null;
+    }
+
+    private IEnumerator ActivateFirstSceneAfterLanguageSelectionRoutine(VirtualScene cfg)
+    {
+        if (cfg == null || cfg.root == null)
+            yield break;
+
+        _index = 0;
+        if (disableInitialSceneDissolveAfterLanguageSelection)
+            _suppressNextSceneSpawnDissolve = true;
+
+        bool previousSuppressScene1ViewBlocker = _suppressScene1ViewBlocker;
+        _suppressScene1ViewBlocker = true;
+
+        if (!cfg.root.activeSelf)
+        {
+            cfg.root.SetActive(true);
+            yield return null;
+        }
+
+        ActivateOnly(cfg);
+        yield return null;
+
+        yield return RestoreObjectsHiddenForLanguageSelectionRoutine();
+
+        yield return ApplySpawnAudioVideoRoutine(cfg);
+
+        _suppressScene1ViewBlocker = previousSuppressScene1ViewBlocker;
+    }
+
+    private bool ShowLanguageSelectionTransitionBlocker()
+    {
+        if (!EnsureStartupViewBlockerCanvas())
+            return false;
+
+        if (_startupViewBlockerRoutine != null)
+        {
+            StopCoroutine(_startupViewBlockerRoutine);
+            _startupViewBlockerRoutine = null;
+        }
+
+        _startupViewBlockerCanvasGroup.alpha = 1f;
+        return true;
+    }
+
+    private void FadeLanguageSelectionTransitionBlocker()
+    {
+        if (_startupViewBlockerCanvasGroup == null)
+            return;
+
+        if (_startupViewBlockerRoutine != null)
+            StopCoroutine(_startupViewBlockerRoutine);
+
+        _startupViewBlockerRoutine = StartCoroutine(StartupViewBlockerRoutine(
+            Mathf.Max(0f, languageSelectionPostRestoreHoldSeconds)));
+    }
+
+    private void StopLanguageSelectionCompletion()
+    {
+        if (_languageSelectionCompletionRoutine == null)
+            return;
+
+        StopCoroutine(_languageSelectionCompletionRoutine);
+        _languageSelectionCompletionRoutine = null;
+        _suppressScene1ViewBlocker = false;
     }
 
     private void QueueLanguagePreferenceSave()
@@ -1049,6 +1158,7 @@ public class SceneGroupManager : MonoBehaviour
 
     private void ShowLanguageSelection()
     {
+        StopLanguageSelectionCompletion();
         currentLanguage = NureLanguage.Italian;
         _previousLanguageSelectionFallbackPressed = false;
         _lastLanguageSelectionFallbackPressTime = -10f;
@@ -1093,15 +1203,25 @@ public class SceneGroupManager : MonoBehaviour
 
         StopAndDestroyStartupViewBlocker();
 
-        if (!showFirstSceneBehindLanguageSelection || cfg.root == null)
+        if (!ShouldActivateFirstSceneDuringLanguageSelection(cfg))
             return;
 
-        cfg.root.SetActive(true);
+        if (!cfg.root.activeSelf)
+            cfg.root.SetActive(true);
 
         ApplySceneSpecificVisibility(cfg);
 
         if (enforceSkyboxByScene)
             ApplySkyboxRuleForCurrentActiveScene();
+    }
+
+    private bool ShouldActivateFirstSceneDuringLanguageSelection(VirtualScene cfg)
+    {
+        if (cfg == null || cfg.root == null)
+            return false;
+
+        return showFirstSceneBehindLanguageSelection
+            || (preactivateFirstSceneDuringLanguageSelection && activateFirstSceneAfterLanguageSelection);
     }
 
     private void DestroyLanguageSelection()
@@ -1224,6 +1344,53 @@ public class SceneGroupManager : MonoBehaviour
         }
 
         _languageHiddenColliders.Clear();
+    }
+
+    private IEnumerator RestoreObjectsHiddenForLanguageSelectionRoutine()
+    {
+        int maxPerFrame = Mathf.Max(1, languageSelectionRestoreComponentsPerFrame);
+        float frameBudgetSeconds = Mathf.Max(0.1f, languageSelectionRestoreFrameBudgetMs) * 0.001f;
+        int restoredThisFrame = 0;
+        float frameDeadline = Time.realtimeSinceStartup + frameBudgetSeconds;
+
+        for (int i = 0; i < _languageHiddenRenderers.Count; i++)
+        {
+            LanguageRendererState state = _languageHiddenRenderers[i];
+            if (state != null && state.Renderer != null)
+                state.Renderer.enabled = state.Enabled;
+
+            restoredThisFrame++;
+            if (ShouldYieldLanguageRestoreWork(restoredThisFrame, maxPerFrame, frameDeadline))
+            {
+                restoredThisFrame = 0;
+                yield return null;
+                frameDeadline = Time.realtimeSinceStartup + frameBudgetSeconds;
+            }
+        }
+
+        _languageHiddenRenderers.Clear();
+
+        for (int i = 0; i < _languageHiddenColliders.Count; i++)
+        {
+            LanguageColliderState state = _languageHiddenColliders[i];
+            if (state != null && state.Collider != null)
+                state.Collider.enabled = state.Enabled;
+
+            restoredThisFrame++;
+            if (ShouldYieldLanguageRestoreWork(restoredThisFrame, maxPerFrame, frameDeadline))
+            {
+                restoredThisFrame = 0;
+                yield return null;
+                frameDeadline = Time.realtimeSinceStartup + frameBudgetSeconds;
+            }
+        }
+
+        _languageHiddenColliders.Clear();
+    }
+
+    private static bool ShouldYieldLanguageRestoreWork(int restoredThisFrame, int maxPerFrame, float frameDeadline)
+    {
+        return restoredThisFrame >= maxPerFrame || Time.realtimeSinceStartup >= frameDeadline;
     }
 
     private void StartLanguageSelectionPreload()
@@ -2600,11 +2767,11 @@ public class SceneGroupManager : MonoBehaviour
 
         foreach (var s in scenes)
         {
-            if (s.root != null)
+            if (s.root != null && s.root.activeSelf)
                 s.root.SetActive(false);
 
             // spegni eventuali pannelli video
-            if (s.videoPanelRoot != null)
+            if (s.videoPanelRoot != null && s.videoPanelRoot.activeSelf)
                 s.videoPanelRoot.SetActive(false);
         }
     }
@@ -2882,7 +3049,7 @@ public class SceneGroupManager : MonoBehaviour
         Canvas canvas = canvasGo.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = headCamera;
-        canvas.sortingOrder = 5000;
+        canvas.sortingOrder = 7000;
 
         CanvasScaler scaler = canvasGo.AddComponent<CanvasScaler>();
         scaler.dynamicPixelsPerUnit = 10f;
@@ -3257,9 +3424,13 @@ public class SceneGroupManager : MonoBehaviour
         foreach (var s in scenes)
         {
             if (s.root != null)
-                s.root.SetActive(s.root == cfg.root);
+            {
+                bool shouldBeActive = s.root == cfg.root;
+                if (s.root.activeSelf != shouldBeActive)
+                    s.root.SetActive(shouldBeActive);
+            }
 
-            if (s.videoPanelRoot != null)
+            if (s.videoPanelRoot != null && s.videoPanelRoot.activeSelf)
                 s.videoPanelRoot.SetActive(false);
         }
 
