@@ -8,30 +8,46 @@ using UnityEngine.Animations;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using UnityEngine.XR.Interaction.Toolkit.UI;
+using UnityEngine.XR;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 #endif
 
 public class SceneGroupManager : MonoBehaviour
 {
     public event Action<VirtualScene> SceneActivated;
+    public event Action LanguageChanged;
 
     private const string ForcedScene1Name = "Scena1";
     private const string ForcedScene9Name = "Scena9";
     private const string ForcedScene10Name = "Scena10";
     private const string DefaultGlobalSkyboxTextureResourceName = "rosendal_plains_2_4k";
-    private const int RuntimeSkyDomeLongitudeSegments = 128;
-    private const int RuntimeSkyDomeLatitudeSegments = 64;
+    private const int RuntimeSkyDomeLongitudeSegments = 64;
+    private const int RuntimeSkyDomeLatitudeSegments = 32;
     private const float ContinuousSceneRuleRefreshInterval = 0.2f;
     private const float CameraCacheRefreshInterval = 0.75f;
     private const int DefaultVideoRenderTextureMaxSize = 4096;
     private const int MobileVideoRenderTextureMaxSize = 2048;
-    private const int MobileSceneSpawnDissolveMaxRenderers = 24;
+    private const int MobileSceneSpawnDissolveMaxRenderers = 8;
     private const float MobileSceneSpawnDissolveDuration = 1.25f;
     private const float MobileSceneSpawnDissolveMinBoundsSize = 0.35f;
+    private const float LanguageFlagPlaneWidth = 0.44f;
+    private const float LanguageFlagPlaneHeight = 0.26f;
+    private const float LanguageFlagPlaneColliderDepth = 0.06f;
+    private const int LanguageFlagTextureWidth = 1024;
+    private const int LanguageFlagTextureHeight = 512;
     private const string Scene7DelayedDissolveSceneName = "Scena7";
     private const string Scene7DelayedDissolveObjectName = "Mausoleo";
     private const float Scene7DelayedDissolveExtraDelay = 10f;
+    private static readonly Color32 ItalianFlagGreen = new Color32(0, 146, 70, 255);
+    private static readonly Color32 ItalianFlagWhite = new Color32(244, 245, 240, 255);
+    private static readonly Color32 ItalianFlagRed = new Color32(206, 43, 55, 255);
+    private static readonly Color32 EnglishFlagBlue = new Color32(1, 33, 105, 255);
+    private static readonly Color32 EnglishFlagWhite = new Color32(255, 255, 255, 255);
+    private static readonly Color32 EnglishFlagRed = new Color32(200, 16, 46, 255);
     private static readonly string[] ForcedToggleObjectNames =
     {
         "Rune_125K_20x4096",
@@ -53,6 +69,22 @@ public class SceneGroupManager : MonoBehaviour
         public bool waitForVideoEnd = false; // se true, la sequenza aspetta fine video
     }
 
+    public enum NureLanguage
+    {
+        Italian,
+        English
+    }
+
+    [Serializable]
+    public class LocalizedSceneContent
+    {
+        public string sceneName;
+        public string italianLabel;
+        public string englishLabel;
+        public AudioClip italianAudioClip;
+        public AudioClip englishAudioClip;
+    }
+
     [Header("References")]
     [Tooltip("Assegna qui il Transform ROOT del tuo XR Origin (XR Rig), non la camera.")]
     public Transform player;
@@ -62,6 +94,31 @@ public class SceneGroupManager : MonoBehaviour
 
     [Header("Scenes")]
     public List<VirtualScene> scenes = new List<VirtualScene>();
+
+    [Header("Localization")]
+    public bool enableLocalization = true;
+    public NureLanguage currentLanguage = NureLanguage.Italian;
+    public bool rememberLanguagePreference = true;
+    public bool showLanguageSelectionOnStart = true;
+    public bool resetToLanguageSelectionOnPause = true;
+    public bool showFirstSceneBehindLanguageSelection = false;
+    [Tooltip("Se true, la prima scena viene attivata mentre il menu lingua e' visibile, poi nascosta fino alla scelta. Evita il picco di SetActive subito dopo il click lingua.")]
+    public bool preactivateFirstSceneDuringLanguageSelection = true;
+    [Tooltip("Se true, quando si sceglie la lingua parte sempre la prima scena della lista.")]
+    public bool activateFirstSceneAfterLanguageSelection = true;
+    public bool disableInitialSceneDissolveAfterLanguageSelection = true;
+    public List<LocalizedSceneContent> localizedScenes = new List<LocalizedSceneContent>();
+
+    [Header("Language Selection UI")]
+    [Min(0.5f)] public float languagePanelDistanceFromCamera = 1.25f;
+    public Vector2 languagePanelSize = new Vector2(900f, 520f);
+    public Color languagePanelColor = new Color(0.04f, 0.07f, 0.09f, 0.96f);
+    public Color languageButtonColor = new Color(0.14f, 0.36f, 0.46f, 0.98f);
+    public Color languageTextColor = new Color(0.98f, 0.96f, 0.9f, 1f);
+    public Texture2D italianLanguageFlagTexture;
+    public Texture2D englishLanguageFlagTexture;
+
+    public int LanguageVersion { get; private set; }
 
     [Header("Sequence")]
     public bool playSequenceOnStart = false;
@@ -285,6 +342,7 @@ public class SceneGroupManager : MonoBehaviour
     [Header("Scene Spawn Dissolve FX")]
     [Tooltip("Se true, all'attivazione di una scena virtuale applica un dissolve URP temporaneo ai renderer della scena.")]
     public bool enableSceneSpawnDissolveFx = true;
+    public bool disableSceneSpawnDissolveOnMobile = true;
 
     [Range(1, 256)]
     [Tooltip("Numero massimo di renderer coinvolti nel dissolve per ogni cambio scena.")]
@@ -360,6 +418,50 @@ public class SceneGroupManager : MonoBehaviour
     [Range(0.01f, 0.5f)]
     public float startupScene1UnblockFadeSeconds = 0.12f;
 
+    [Header("Language Selection Smooth Start")]
+    [Range(16, 2048)]
+    [Tooltip("Numero massimo di renderer/collider ripristinati per frame dopo la scelta lingua.")]
+    public int languageSelectionRestoreComponentsPerFrame = 128;
+
+    [Range(0.25f, 8f)]
+    [Tooltip("Budget massimo in millisecondi usato ogni frame per ripristinare oggetti nascosti dopo la scelta lingua.")]
+    public float languageSelectionRestoreFrameBudgetMs = 2f;
+
+    [Range(0f, 0.3f)]
+    [Tooltip("Pausa minima del blocker nero dopo il ripristino, prima del fade-out.")]
+    public float languageSelectionPostRestoreHoldSeconds = 0.03f;
+
+    [Header("Language Selection Preload")]
+    [Tooltip("Se true, durante la selezione lingua scalda scene, shader, materiali, mesh, audio e video prima dell'avvio esperienza.")]
+    public bool preloadExperienceDuringLanguageSelection = false;
+
+    [Tooltip("Se true, se l'utente sceglie una lingua mentre il preload e' in corso, l'avvio aspetta la fine del preload.")]
+    public bool waitForLanguageSelectionPreloadBeforeStart = true;
+
+    [Tooltip("Se true, il preload viene eseguito una sola volta per sessione app.")]
+    public bool preloadExperienceOnlyOncePerSession = true;
+
+    [Range(0, 8)]
+    [Tooltip("Frame da lasciare alla UI lingua prima di iniziare il preload.")]
+    public int preloadInitialDelayFrames = 2;
+
+    [Range(0, 4)]
+    [Tooltip("Frame di respiro tra il warmup di una scena virtuale e la successiva.")]
+    public int preloadSettleFramesPerScene = 1;
+
+    [Range(16, 256)]
+    [Tooltip("Dimensione della RenderTexture usata dalla camera nascosta di warmup.")]
+    public int preloadRenderTextureSize = 96;
+
+    [Tooltip("Se true, esegue Shader.WarmupAllShaders durante la selezione lingua.")]
+    public bool preloadWarmupShaders = false;
+
+    [Tooltip("Se true, renderizza ogni scena una volta su RenderTexture nascosta per forzare upload/compilazione GPU prima dell'esperienza.")]
+    public bool preloadRenderSceneOnce = false;
+
+    [Tooltip("Se true, chiama Prepare sui VideoPlayer trovati durante il warmup.")]
+    public bool preloadPrepareVideos = false;
+
     private int _index = -1;
     private Coroutine _sequenceRoutine;
     private readonly List<Coroutine> _donnaRoutines = new List<Coroutine>(4);
@@ -396,6 +498,11 @@ public class SceneGroupManager : MonoBehaviour
     private bool _hasWarnedMissingScene6TorchShader;
     private bool _hasShownStartupScene1ViewBlocker;
     private Coroutine _startupViewBlockerRoutine;
+    private Coroutine _languagePreferenceSaveRoutine;
+    private Coroutine _localizedRuntimeUiRefreshRoutine;
+    private Coroutine _languageSelectionCompletionRoutine;
+    private Coroutine _languageSelectionPreloadRoutine;
+    private Coroutine _queuedLanguageSelectionRoutine;
     private Transform _startupViewBlockerTransform;
     private CanvasGroup _startupViewBlockerCanvasGroup;
     private SceneActivationUrpDissolveVfx _sceneSpawnDissolveVfx;
@@ -404,11 +511,62 @@ public class SceneGroupManager : MonoBehaviour
     private float _nextCameraCacheRefreshTime = -1f;
     private GameObject _scene7DelayedDissolveTarget;
     private bool _scene7DelayedDissolveTargetOriginalActive;
+    private GameObject _languageSelectionRoot;
+    private Transform _languageSelectionTransform;
+    private bool _waitingForLanguageSelection;
+    private bool _restartLanguageSelectionOnResume;
+    private bool _suppressScene1ViewBlocker;
+    private bool _suppressNextSceneSpawnDissolve;
+    private bool _languageSelectionPreloadRunning;
+    private bool _languageSelectionPreloadComplete;
+    private bool _languageSelectionPreloadEverCompleted;
+    private bool _languageSelectionInputLockedForPreload;
+    private bool _hasQueuedLanguageAfterPreload;
+    private bool _languageSelectionFixedInWorld;
+    private float _lastLanguageSelectionFallbackPressTime = -10f;
+    private bool _previousLanguageSelectionFallbackPressed;
+    private NureLanguageSelectionButton _focusedLanguageButton;
+    private NureLanguageSelectionButton _italianLanguageButton;
+    private NureLanguageSelectionButton _englishLanguageButton;
+    private NureLanguage _queuedLanguageAfterPreload;
+    private Material _italianLanguageMaterial;
+    private Material _englishLanguageMaterial;
+    private Texture2D _italianLanguageTexture;
+    private Texture2D _englishLanguageTexture;
+    private Mesh _languageFlagPlaneMesh;
+    private readonly List<LanguageRendererState> _languageHiddenRenderers = new List<LanguageRendererState>(256);
+    private readonly List<LanguageColliderState> _languageHiddenColliders = new List<LanguageColliderState>(256);
 
     private sealed class Scene8ChurchTargetState
     {
         public GameObject Target;
         public bool OriginalActive;
+    }
+
+    private sealed class LanguageRendererState
+    {
+        public Renderer Renderer;
+        public bool Enabled;
+    }
+
+    private sealed class LanguageColliderState
+    {
+        public Collider Collider;
+        public bool Enabled;
+    }
+
+    private struct PreloadAudioSourceState
+    {
+        public AudioSource Source;
+        public bool PlayOnAwake;
+        public bool Mute;
+        public float Volume;
+    }
+
+    private struct PreloadVideoPlayerState
+    {
+        public VideoPlayer Player;
+        public bool PlayOnAwake;
     }
 
     private sealed class Scene8RendererFadeState
@@ -426,6 +584,14 @@ public class SceneGroupManager : MonoBehaviour
 
     private void Awake()
     {
+        if (Application.isMobilePlatform && !Debug.isDebugBuild)
+        {
+            preloadExperienceDuringLanguageSelection = false;
+            preloadWarmupShaders = false;
+            preloadRenderSceneOnce = false;
+            preloadPrepareVideos = false;
+        }
+
         // Hard lock richiesto: i GO target sono forzati dalla lista interna delle Rune da nascondere.
         scene1Name = ForcedScene1Name;
         globalObjectName = ForcedToggleObjectNames[0];
@@ -447,10 +613,28 @@ public class SceneGroupManager : MonoBehaviour
             if (audioSource == null)
                 audioSource = FindFirstObjectByType<AudioSource>();
         }
+
+        EnsureDefaultLocalizedSceneContent();
+
+        if (enableLocalization && showLanguageSelectionOnStart)
+            currentLanguage = NureLanguage.Italian;
+        else if (enableLocalization && rememberLanguagePreference && PlayerPrefs.HasKey("NURE.Language"))
+        {
+            string saved = PlayerPrefs.GetString("NURE.Language", currentLanguage.ToString());
+            if (Enum.TryParse(saved, out NureLanguage parsed))
+                currentLanguage = parsed;
+        }
     }
 
     private void Start()
     {
+        if (enableLocalization && showLanguageSelectionOnStart)
+        {
+            PrepareLanguageSelectionBackdrop();
+            ShowLanguageSelection();
+            return;
+        }
+
         if (playSequenceOnStart)
         {
             DeactivateAllScenes();
@@ -467,6 +651,8 @@ public class SceneGroupManager : MonoBehaviour
 
     private void Update()
     {
+        UpdateLanguageSelectionFallbackInput();
+
 #if UNITY_EDITOR
         HandleEditorNextSceneHotkey();
 #endif
@@ -474,6 +660,8 @@ public class SceneGroupManager : MonoBehaviour
 
     private void LateUpdate()
     {
+        UpdateLanguageSelectionPose();
+
         if (IsRuntimeSkyDomeVisible())
             UpdateRuntimeSkyDomePose();
 
@@ -560,12 +748,1953 @@ public class SceneGroupManager : MonoBehaviour
         StopScene8ChurchDelayedFade(restoreState: true);
         StopScene1PoseRoutine();
         StopAndDestroyStartupViewBlocker();
+        StopLanguageSelectionCompletion();
+        StopLanguageSelectionPreload();
+        DestroyLanguageSelection();
         StopEpigrafeEntrance();
         StopDonnaSequence();
         ReleaseRuntimeVideoTextures();
         DestroyRuntimeSkyDome();
         ReleaseScene6TorchFlameMaterial();
         RestoreSkyboxAndCameraDefaults();
+    }
+
+    private void OnApplicationPause(bool pauseStatus)
+    {
+        if (!enableLocalization || !resetToLanguageSelectionOnPause)
+            return;
+
+        if (pauseStatus)
+        {
+            _restartLanguageSelectionOnResume = true;
+            ResetToLanguageSelection();
+        }
+        else if (_restartLanguageSelectionOnResume)
+        {
+            _restartLanguageSelectionOnResume = false;
+            ShowLanguageSelection();
+        }
+    }
+
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (!enableLocalization || !resetToLanguageSelectionOnPause)
+            return;
+
+        if (!hasFocus)
+        {
+            _restartLanguageSelectionOnResume = true;
+            ResetToLanguageSelection();
+        }
+    }
+
+    public void SelectLanguageItalian()
+    {
+        SelectLanguage(NureLanguage.Italian);
+    }
+
+    public void SelectLanguageEnglish()
+    {
+        SelectLanguage(NureLanguage.English);
+    }
+
+    public void SelectLanguage(NureLanguage language)
+    {
+        if (QueueLanguageSelectionUntilPreloadCompletes(language))
+            return;
+
+        CompleteLanguageSelection(language);
+    }
+
+    private void CompleteLanguageSelection(NureLanguage language)
+    {
+        if (_languageSelectionCompletionRoutine != null)
+            return;
+
+        _languageSelectionCompletionRoutine = StartCoroutine(CompleteLanguageSelectionRoutine(language));
+    }
+
+    private IEnumerator CompleteLanguageSelectionRoutine(NureLanguage language)
+    {
+        _languageSelectionInputLockedForPreload = true;
+
+        currentLanguage = language;
+        LanguageVersion++;
+        LanguageChanged?.Invoke();
+
+        if (rememberLanguagePreference)
+        {
+            PlayerPrefs.SetString("NURE.Language", currentLanguage.ToString());
+            QueueLanguagePreferenceSave();
+        }
+
+        bool transitionBlockerVisible = ShowLanguageSelectionTransitionBlocker();
+
+        DestroyLanguageSelection();
+        yield return null;
+
+        ScheduleLocalizedRuntimeUIRefresh();
+
+        if (activateFirstSceneAfterLanguageSelection && TryGetFirstConfiguredScene(out VirtualScene firstScene))
+        {
+            yield return ActivateFirstSceneAfterLanguageSelectionRoutine(firstScene);
+        }
+        else
+        {
+            yield return RestoreObjectsHiddenForLanguageSelectionRoutine();
+
+            if (playSequenceOnStart)
+                PlayFromStart();
+        }
+
+        if (transitionBlockerVisible)
+            FadeLanguageSelectionTransitionBlocker();
+
+        _languageSelectionCompletionRoutine = null;
+    }
+
+    private bool QueueLanguageSelectionUntilPreloadCompletes(NureLanguage language)
+    {
+        if (!waitForLanguageSelectionPreloadBeforeStart || !_languageSelectionPreloadRunning || _languageSelectionPreloadComplete)
+            return false;
+
+        _queuedLanguageAfterPreload = language;
+        _hasQueuedLanguageAfterPreload = true;
+        _languageSelectionInputLockedForPreload = true;
+
+        if (_queuedLanguageSelectionRoutine == null)
+            _queuedLanguageSelectionRoutine = StartCoroutine(CompleteQueuedLanguageSelectionAfterPreload());
+
+        if (verboseLogs)
+            Debug.Log($"[SceneGroupManager] Language selection queued until preload completes: {language}");
+
+        return true;
+    }
+
+    private IEnumerator CompleteQueuedLanguageSelectionAfterPreload()
+    {
+        while (_languageSelectionPreloadRunning)
+            yield return null;
+
+        _queuedLanguageSelectionRoutine = null;
+        _languageSelectionInputLockedForPreload = false;
+
+        if (!_hasQueuedLanguageAfterPreload || !_waitingForLanguageSelection)
+        {
+            _hasQueuedLanguageAfterPreload = false;
+            yield break;
+        }
+
+        NureLanguage queuedLanguage = _queuedLanguageAfterPreload;
+        _hasQueuedLanguageAfterPreload = false;
+        CompleteLanguageSelection(queuedLanguage);
+    }
+
+    private bool TryGetFirstConfiguredScene(out VirtualScene cfg)
+    {
+        cfg = null;
+
+        if (scenes == null || scenes.Count == 0)
+            return false;
+
+        cfg = scenes[0];
+        return cfg != null && cfg.root != null;
+    }
+
+    private IEnumerator ActivateFirstSceneAfterLanguageSelectionRoutine(VirtualScene cfg)
+    {
+        if (cfg == null || cfg.root == null)
+            yield break;
+
+        _index = 0;
+        if (disableInitialSceneDissolveAfterLanguageSelection)
+            _suppressNextSceneSpawnDissolve = true;
+
+        bool previousSuppressScene1ViewBlocker = _suppressScene1ViewBlocker;
+        _suppressScene1ViewBlocker = true;
+
+        if (!cfg.root.activeSelf)
+        {
+            cfg.root.SetActive(true);
+            yield return null;
+        }
+
+        ActivateOnly(cfg);
+        yield return null;
+
+        yield return RestoreObjectsHiddenForLanguageSelectionRoutine();
+
+        yield return ApplySpawnAudioVideoRoutine(cfg);
+
+        _suppressScene1ViewBlocker = previousSuppressScene1ViewBlocker;
+    }
+
+    private bool ShowLanguageSelectionTransitionBlocker()
+    {
+        if (!EnsureStartupViewBlockerCanvas())
+            return false;
+
+        if (_startupViewBlockerRoutine != null)
+        {
+            StopCoroutine(_startupViewBlockerRoutine);
+            _startupViewBlockerRoutine = null;
+        }
+
+        _startupViewBlockerCanvasGroup.alpha = 1f;
+        return true;
+    }
+
+    private void FadeLanguageSelectionTransitionBlocker()
+    {
+        if (_startupViewBlockerCanvasGroup == null)
+            return;
+
+        if (_startupViewBlockerRoutine != null)
+            StopCoroutine(_startupViewBlockerRoutine);
+
+        _startupViewBlockerRoutine = StartCoroutine(StartupViewBlockerRoutine(
+            Mathf.Max(0f, languageSelectionPostRestoreHoldSeconds)));
+    }
+
+    private void StopLanguageSelectionCompletion()
+    {
+        if (_languageSelectionCompletionRoutine == null)
+            return;
+
+        StopCoroutine(_languageSelectionCompletionRoutine);
+        _languageSelectionCompletionRoutine = null;
+        _suppressScene1ViewBlocker = false;
+    }
+
+    private void QueueLanguagePreferenceSave()
+    {
+        if (_languagePreferenceSaveRoutine != null)
+            StopCoroutine(_languagePreferenceSaveRoutine);
+
+        _languagePreferenceSaveRoutine = StartCoroutine(SaveLanguagePreferenceDeferred());
+    }
+
+    private IEnumerator SaveLanguagePreferenceDeferred()
+    {
+        yield return null;
+        yield return new WaitForSecondsRealtime(2f);
+        PlayerPrefs.Save();
+        _languagePreferenceSaveRoutine = null;
+    }
+
+    public string GetLocalizedSceneLabel(GameObject sceneRootOrChild)
+    {
+        VirtualScene cfg = FindConfigForObject(sceneRootOrChild);
+        return GetLocalizedSceneLabel(cfg);
+    }
+
+    public string GetLocalizedSceneLabel(VirtualScene cfg)
+    {
+        if (cfg == null)
+            return string.Empty;
+
+        LocalizedSceneContent content = FindLocalizedSceneContent(cfg);
+        if (content != null)
+        {
+            string localized = currentLanguage == NureLanguage.English ? content.englishLabel : content.italianLabel;
+            if (!string.IsNullOrWhiteSpace(localized))
+                return localized;
+        }
+
+        if (!string.IsNullOrWhiteSpace(cfg.name))
+            return cfg.name;
+
+        return cfg.root != null ? cfg.root.name : string.Empty;
+    }
+
+    public string GetLocalizedInterfaceText(string key, string fallback)
+    {
+        if (currentLanguage == NureLanguage.Italian)
+            return fallback;
+
+        switch ((key ?? string.Empty).Trim().ToLowerInvariant())
+        {
+            case "menu":
+                return "MENU";
+            case "move":
+                return "MOVE";
+            case "choose_language_title":
+                return "Choose your language";
+            case "choose_language_subtitle":
+                return "Select a language to start the experience";
+            case "italian":
+                return "Italian";
+            case "english":
+                return "English";
+            default:
+                return fallback;
+        }
+    }
+
+    private void ResetToLanguageSelection()
+    {
+        StopSequence();
+
+        if (audioSource != null)
+            audioSource.Stop();
+
+        VirtualScene cfg = GetCurrentCfg();
+        if (cfg != null && cfg.videoPlayer != null)
+        {
+            try { cfg.videoPlayer.Stop(); } catch { }
+        }
+
+        PrepareLanguageSelectionBackdrop();
+        currentLanguage = NureLanguage.Italian;
+        LanguageVersion++;
+        LanguageChanged?.Invoke();
+        ShowLanguageSelection();
+    }
+
+    private AudioClip ResolveAudioClip(VirtualScene cfg)
+    {
+        if (!enableLocalization || cfg == null)
+            return cfg != null ? cfg.audioClip : null;
+
+        LocalizedSceneContent content = FindLocalizedSceneContent(cfg);
+        if (content != null)
+        {
+            AudioClip localized = currentLanguage == NureLanguage.English ? content.englishAudioClip : content.italianAudioClip;
+            if (localized != null)
+                return localized;
+        }
+
+        return cfg.audioClip;
+    }
+
+    private LocalizedSceneContent FindLocalizedSceneContent(VirtualScene cfg)
+    {
+        if (cfg == null || localizedScenes == null)
+            return null;
+
+        string cfgName = !string.IsNullOrWhiteSpace(cfg.name) ? cfg.name : (cfg.root != null ? cfg.root.name : string.Empty);
+        for (int i = 0; i < localizedScenes.Count; i++)
+        {
+            LocalizedSceneContent content = localizedScenes[i];
+            if (content == null || string.IsNullOrWhiteSpace(content.sceneName))
+                continue;
+
+            if (string.Equals(content.sceneName, cfgName, StringComparison.OrdinalIgnoreCase))
+                return content;
+        }
+
+        if (cfg.root != null)
+        {
+            for (int i = 0; i < localizedScenes.Count; i++)
+            {
+                LocalizedSceneContent content = localizedScenes[i];
+                if (content == null || string.IsNullOrWhiteSpace(content.sceneName))
+                    continue;
+
+                if (string.Equals(content.sceneName, cfg.root.name, StringComparison.OrdinalIgnoreCase))
+                    return content;
+            }
+        }
+
+        return null;
+    }
+
+    private void EnsureDefaultLocalizedSceneContent()
+    {
+        if (localizedScenes == null)
+            localizedScenes = new List<LocalizedSceneContent>();
+
+        string[] italian =
+        {
+            "MAPPA SITO ARCHEOLOGICO",
+            "CHIESA PALEOCRISTIANA e TOMBE",
+            "EPIGRAFE AMOCADA",
+            "NURAGHE E VILLAGGIO",
+            "TOMBE A FOSSA",
+            "MAUSOLEO E REFRIGERIUM",
+            "TOMBE A CAMERA",
+            "TOMBE A FOSSA E SARCOFAGO",
+            "INTERNO CHIESA PALEOCRISTIANA",
+            "SANTA LUCIA",
+        };
+
+        string[] english =
+        {
+            "ARCHAEOLOGICAL SITE MAP",
+            "EARLY CHRISTIAN CHURCH AND GRAVES",
+            "AMOCADA INSCRIPTION",
+            "NURAGHE AND VILLAGE",
+            "PIT GRAVES",
+            "MAUSOLEUM AND REFRIGERIUM",
+            "CHAMBER TOMBS",
+            "PIT GRAVES AND SARCOPHAGUS",
+            "INSIDE THE EARLY CHRISTIAN CHURCH",
+            "SAINT LUCIA",
+        };
+
+        int count = Mathf.Min(scenes != null ? scenes.Count : 0, italian.Length);
+        for (int i = 0; i < count; i++)
+        {
+            VirtualScene cfg = scenes[i];
+            if (cfg == null)
+                continue;
+
+            string sceneName = !string.IsNullOrWhiteSpace(cfg.name) ? cfg.name : (cfg.root != null ? cfg.root.name : $"Scena{i + 1}");
+            LocalizedSceneContent content = FindLocalizedSceneContent(cfg);
+            if (content == null)
+            {
+                content = new LocalizedSceneContent { sceneName = sceneName };
+                localizedScenes.Add(content);
+            }
+
+            if (string.IsNullOrWhiteSpace(content.italianLabel))
+                content.italianLabel = italian[i];
+            if (string.IsNullOrWhiteSpace(content.englishLabel))
+                content.englishLabel = english[i];
+            if (content.italianAudioClip == null)
+                content.italianAudioClip = cfg.audioClip;
+        }
+    }
+
+    private void ShowLanguageSelection()
+    {
+        StopLanguageSelectionCompletion();
+        currentLanguage = NureLanguage.Italian;
+        _previousLanguageSelectionFallbackPressed = false;
+        _lastLanguageSelectionFallbackPressTime = -10f;
+
+        if (rememberLanguagePreference)
+            PlayerPrefs.DeleteKey("NURE.Language");
+
+        DestroyLanguageSelection();
+        PrepareLanguageSelectionBackdrop();
+        _waitingForLanguageSelection = true;
+        BuildLanguageSelectionUI();
+        HideObjectsForLanguageSelection();
+        RefreshLocalizedRuntimeUI();
+        StartLanguageSelectionPreload();
+    }
+
+    private void PrepareLanguageSelectionBackdrop()
+    {
+        StopSequence();
+
+        if (audioSource != null)
+            audioSource.Stop();
+
+        DeactivateAllScenes();
+        StopAndDestroyStartupViewBlocker();
+
+        if (scenes == null || scenes.Count == 0)
+            return;
+
+        VirtualScene cfg = scenes[0];
+        if (cfg == null)
+            return;
+
+        _index = 0;
+
+        if (player != null && cfg.playerSpawn != null)
+        {
+            _suppressScene1ViewBlocker = true;
+            ApplyPlayerPoseFromSpawn(cfg, cfg.playerSpawn);
+            _suppressScene1ViewBlocker = false;
+        }
+
+        StopAndDestroyStartupViewBlocker();
+
+        if (!ShouldActivateFirstSceneDuringLanguageSelection(cfg))
+            return;
+
+        if (!cfg.root.activeSelf)
+            cfg.root.SetActive(true);
+
+        ApplySceneSpecificVisibility(cfg);
+
+        if (enforceSkyboxByScene)
+            ApplySkyboxRuleForCurrentActiveScene();
+    }
+
+    private bool ShouldActivateFirstSceneDuringLanguageSelection(VirtualScene cfg)
+    {
+        if (cfg == null || cfg.root == null)
+            return false;
+
+        return showFirstSceneBehindLanguageSelection
+            || (preactivateFirstSceneDuringLanguageSelection && activateFirstSceneAfterLanguageSelection);
+    }
+
+    private void DestroyLanguageSelection()
+    {
+        _waitingForLanguageSelection = false;
+        _languageSelectionFixedInWorld = false;
+        _languageSelectionInputLockedForPreload = false;
+        _hasQueuedLanguageAfterPreload = false;
+        if (_languageSelectionRoot != null)
+        {
+            _languageSelectionRoot.SetActive(false);
+            Destroy(_languageSelectionRoot);
+        }
+
+        ReleaseRuntimeLanguageAssets();
+
+        _languageSelectionRoot = null;
+        _languageSelectionTransform = null;
+        _italianLanguageButton = null;
+        _englishLanguageButton = null;
+    }
+
+    private void ReleaseRuntimeLanguageAssets()
+    {
+        if (_italianLanguageMaterial != null)
+            Destroy(_italianLanguageMaterial);
+        if (_englishLanguageMaterial != null)
+            Destroy(_englishLanguageMaterial);
+        if (_italianLanguageTexture != null)
+            Destroy(_italianLanguageTexture);
+        if (_englishLanguageTexture != null)
+            Destroy(_englishLanguageTexture);
+        if (_languageFlagPlaneMesh != null)
+            Destroy(_languageFlagPlaneMesh);
+
+        _italianLanguageMaterial = null;
+        _englishLanguageMaterial = null;
+        _italianLanguageTexture = null;
+        _englishLanguageTexture = null;
+        _languageFlagPlaneMesh = null;
+    }
+
+    private Texture ResolveLanguageFlagTexture(NureLanguage language)
+    {
+        Texture2D configuredTexture = language == NureLanguage.Italian
+            ? italianLanguageFlagTexture
+            : englishLanguageFlagTexture;
+
+        if (configuredTexture != null)
+            return configuredTexture;
+
+        Texture2D runtimeTexture = CreateLanguageFlagTexture(language);
+        if (language == NureLanguage.Italian)
+            _italianLanguageTexture = runtimeTexture;
+        else
+            _englishLanguageTexture = runtimeTexture;
+
+        return runtimeTexture;
+    }
+
+    private void HideObjectsForLanguageSelection()
+    {
+        RestoreObjectsHiddenForLanguageSelection();
+
+        Renderer[] renderers = FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null || !renderer.enabled)
+                continue;
+            if (!renderer.gameObject.activeInHierarchy)
+                continue;
+            if (ShouldKeepVisibleDuringLanguageSelection(renderer.transform))
+                continue;
+
+            _languageHiddenRenderers.Add(new LanguageRendererState
+            {
+                Renderer = renderer,
+                Enabled = renderer.enabled,
+            });
+            renderer.enabled = false;
+        }
+
+        Collider[] colliders = FindObjectsByType<Collider>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider == null || !collider.enabled)
+                continue;
+            if (!collider.gameObject.activeInHierarchy)
+                continue;
+            if (ShouldKeepVisibleDuringLanguageSelection(collider.transform))
+                continue;
+
+            _languageHiddenColliders.Add(new LanguageColliderState
+            {
+                Collider = collider,
+                Enabled = collider.enabled,
+            });
+            collider.enabled = false;
+        }
+    }
+
+    private void RestoreObjectsHiddenForLanguageSelection()
+    {
+        for (int i = 0; i < _languageHiddenRenderers.Count; i++)
+        {
+            LanguageRendererState state = _languageHiddenRenderers[i];
+            if (state != null && state.Renderer != null)
+                state.Renderer.enabled = state.Enabled;
+        }
+
+        _languageHiddenRenderers.Clear();
+
+        for (int i = 0; i < _languageHiddenColliders.Count; i++)
+        {
+            LanguageColliderState state = _languageHiddenColliders[i];
+            if (state != null && state.Collider != null)
+                state.Collider.enabled = state.Enabled;
+        }
+
+        _languageHiddenColliders.Clear();
+    }
+
+    private IEnumerator RestoreObjectsHiddenForLanguageSelectionRoutine()
+    {
+        int maxPerFrame = Mathf.Max(1, languageSelectionRestoreComponentsPerFrame);
+        float frameBudgetSeconds = Mathf.Max(0.1f, languageSelectionRestoreFrameBudgetMs) * 0.001f;
+        int restoredThisFrame = 0;
+        float frameDeadline = Time.realtimeSinceStartup + frameBudgetSeconds;
+
+        for (int i = 0; i < _languageHiddenRenderers.Count; i++)
+        {
+            LanguageRendererState state = _languageHiddenRenderers[i];
+            if (state != null && state.Renderer != null)
+                state.Renderer.enabled = state.Enabled;
+
+            restoredThisFrame++;
+            if (ShouldYieldLanguageRestoreWork(restoredThisFrame, maxPerFrame, frameDeadline))
+            {
+                restoredThisFrame = 0;
+                yield return null;
+                frameDeadline = Time.realtimeSinceStartup + frameBudgetSeconds;
+            }
+        }
+
+        _languageHiddenRenderers.Clear();
+
+        for (int i = 0; i < _languageHiddenColliders.Count; i++)
+        {
+            LanguageColliderState state = _languageHiddenColliders[i];
+            if (state != null && state.Collider != null)
+                state.Collider.enabled = state.Enabled;
+
+            restoredThisFrame++;
+            if (ShouldYieldLanguageRestoreWork(restoredThisFrame, maxPerFrame, frameDeadline))
+            {
+                restoredThisFrame = 0;
+                yield return null;
+                frameDeadline = Time.realtimeSinceStartup + frameBudgetSeconds;
+            }
+        }
+
+        _languageHiddenColliders.Clear();
+    }
+
+    private static bool ShouldYieldLanguageRestoreWork(int restoredThisFrame, int maxPerFrame, float frameDeadline)
+    {
+        return restoredThisFrame >= maxPerFrame || Time.realtimeSinceStartup >= frameDeadline;
+    }
+
+    private void StartLanguageSelectionPreload()
+    {
+        if (!preloadExperienceDuringLanguageSelection)
+        {
+            _languageSelectionPreloadComplete = true;
+            _languageSelectionPreloadRunning = false;
+            return;
+        }
+
+        if (preloadExperienceOnlyOncePerSession && _languageSelectionPreloadEverCompleted)
+        {
+            _languageSelectionPreloadComplete = true;
+            _languageSelectionPreloadRunning = false;
+            return;
+        }
+
+        if (_languageSelectionPreloadRoutine != null)
+            return;
+
+        _languageSelectionPreloadComplete = false;
+        _languageSelectionPreloadRunning = true;
+        _languageSelectionPreloadRoutine = StartCoroutine(LanguageSelectionPreloadRoutine());
+    }
+
+    private void StopLanguageSelectionPreload()
+    {
+        if (_languageSelectionPreloadRoutine != null)
+        {
+            StopCoroutine(_languageSelectionPreloadRoutine);
+            _languageSelectionPreloadRoutine = null;
+        }
+
+        if (_queuedLanguageSelectionRoutine != null)
+        {
+            StopCoroutine(_queuedLanguageSelectionRoutine);
+            _queuedLanguageSelectionRoutine = null;
+        }
+
+        _languageSelectionPreloadRunning = false;
+        _languageSelectionInputLockedForPreload = false;
+        _hasQueuedLanguageAfterPreload = false;
+    }
+
+    private IEnumerator LanguageSelectionPreloadRoutine()
+    {
+        float startedAt = Time.realtimeSinceStartup;
+        int previousAsyncUploadTimeSlice = QualitySettings.asyncUploadTimeSlice;
+        int previousAsyncUploadBufferSize = QualitySettings.asyncUploadBufferSize;
+        ThreadPriority previousBackgroundLoadingPriority = Application.backgroundLoadingPriority;
+
+        try
+        {
+            QualitySettings.asyncUploadTimeSlice = Mathf.Max(previousAsyncUploadTimeSlice, 4);
+            QualitySettings.asyncUploadBufferSize = Mathf.Max(previousAsyncUploadBufferSize, 64);
+            Application.backgroundLoadingPriority = ThreadPriority.Low;
+
+            int initialFrames = Mathf.Clamp(preloadInitialDelayFrames, 0, 8);
+            for (int i = 0; i < initialFrames; i++)
+                yield return null;
+
+            WarmupRuntimeResourcesForPreload();
+            yield return null;
+
+            if (preloadWarmupShaders)
+            {
+                Shader.WarmupAllShaders();
+                yield return null;
+            }
+
+            if (scenes != null)
+            {
+                for (int i = 0; i < scenes.Count; i++)
+                    yield return PreloadVirtualSceneRoutine(scenes[i], i);
+            }
+
+            Canvas.ForceUpdateCanvases();
+
+            _languageSelectionPreloadComplete = true;
+            _languageSelectionPreloadEverCompleted = true;
+
+            if (verboseLogs)
+            {
+                float elapsed = Time.realtimeSinceStartup - startedAt;
+                Debug.Log($"[SceneGroupManager] Language selection preload completed in {elapsed:0.00}s.");
+            }
+        }
+        finally
+        {
+            QualitySettings.asyncUploadTimeSlice = previousAsyncUploadTimeSlice;
+            QualitySettings.asyncUploadBufferSize = previousAsyncUploadBufferSize;
+            Application.backgroundLoadingPriority = previousBackgroundLoadingPriority;
+            _languageSelectionPreloadRunning = false;
+            _languageSelectionPreloadRoutine = null;
+        }
+    }
+
+    private void WarmupRuntimeResourcesForPreload()
+    {
+        if (!string.IsNullOrWhiteSpace(globalSkyboxTextureResourceName))
+            WarmupTextureForPreload(Resources.Load<Texture>(globalSkyboxTextureResourceName));
+
+        if (!string.IsNullOrWhiteSpace(runtimeSkyDomeShaderResourceName))
+            Resources.Load<Shader>(runtimeSkyDomeShaderResourceName);
+
+        if (!string.IsNullOrWhiteSpace(scene6TorchGlowTextureResourceName))
+            WarmupTextureForPreload(Resources.Load<Texture2D>(scene6TorchGlowTextureResourceName));
+
+        WarmupMaterialForPreload(Resources.Load<Material>("SceneSpawnDissolveLitTemplate"));
+        WarmupMaterialForPreload(Resources.Load<Material>("SceneSpawnDissolveUnlitTemplate"));
+    }
+
+    private IEnumerator PreloadVirtualSceneRoutine(VirtualScene cfg, int sceneIndex)
+    {
+        if (cfg == null)
+            yield break;
+
+        PreloadAudioForScene(cfg);
+
+        if (cfg.root == null)
+            yield break;
+
+        bool rootWasActive = cfg.root.activeSelf;
+        bool videoPanelWasActive = cfg.videoPanelRoot != null && cfg.videoPanelRoot.activeSelf;
+        AudioSource[] audioSources = cfg.root.GetComponentsInChildren<AudioSource>(true);
+        VideoPlayer[] videoPlayers = cfg.root.GetComponentsInChildren<VideoPlayer>(true);
+        List<PreloadAudioSourceState> audioStates = CaptureAudioSourceStates(audioSources);
+        List<PreloadVideoPlayerState> videoStates = CaptureVideoPlayerStates(videoPlayers);
+        AddVideoPlayerStateIfMissing(videoStates, cfg.videoPlayer);
+
+        try
+        {
+            PrepareAudioSourcesForSilentPreload(audioStates);
+            PrepareVideoPlayersForSilentPreload(videoStates);
+
+            if (cfg.videoPanelRoot != null && !cfg.videoPanelRoot.activeSelf)
+                cfg.videoPanelRoot.SetActive(true);
+
+            if (!cfg.root.activeSelf)
+                cfg.root.SetActive(true);
+
+            WarmupSceneForPreload(cfg.root);
+
+            if (preloadPrepareVideos)
+            {
+                TryPrepareVideoForPreload(cfg.videoPlayer);
+                for (int i = 0; i < videoPlayers.Length; i++)
+                    TryPrepareVideoForPreload(videoPlayers[i]);
+            }
+
+            if (preloadRenderSceneOnce)
+                RenderSceneForPreload(cfg.root);
+        }
+        finally
+        {
+            RestoreAudioSourcesAfterPreload(audioStates);
+            RestoreVideoPlayersAfterPreload(videoStates);
+
+            if (cfg.videoPanelRoot != null)
+                cfg.videoPanelRoot.SetActive(videoPanelWasActive);
+
+            cfg.root.SetActive(rootWasActive);
+        }
+
+        int settleFrames = Mathf.Clamp(preloadSettleFramesPerScene, 0, 4);
+        for (int i = 0; i < settleFrames; i++)
+            yield return null;
+
+        if (verboseLogs)
+        {
+            string sceneName = string.IsNullOrWhiteSpace(cfg.name) ? cfg.root.name : cfg.name;
+            Debug.Log($"[SceneGroupManager] Preloaded virtual scene {sceneIndex}: {sceneName}");
+        }
+    }
+
+    private void PreloadAudioForScene(VirtualScene cfg)
+    {
+        if (cfg == null)
+            return;
+
+        PreloadAudioClipForPreload(cfg.audioClip);
+
+        LocalizedSceneContent content = FindLocalizedSceneContent(cfg);
+        if (content != null)
+        {
+            PreloadAudioClipForPreload(content.italianAudioClip);
+            PreloadAudioClipForPreload(content.englishAudioClip);
+        }
+    }
+
+    private static void PreloadAudioClipForPreload(AudioClip clip)
+    {
+        if (clip == null)
+            return;
+
+        if (clip.loadState == AudioDataLoadState.Unloaded)
+            clip.LoadAudioData();
+    }
+
+    private static List<PreloadAudioSourceState> CaptureAudioSourceStates(AudioSource[] sources)
+    {
+        List<PreloadAudioSourceState> states = new List<PreloadAudioSourceState>(sources != null ? sources.Length : 0);
+        if (sources == null)
+            return states;
+
+        for (int i = 0; i < sources.Length; i++)
+        {
+            AudioSource source = sources[i];
+            if (source == null)
+                continue;
+
+            states.Add(new PreloadAudioSourceState
+            {
+                Source = source,
+                PlayOnAwake = source.playOnAwake,
+                Mute = source.mute,
+                Volume = source.volume,
+            });
+        }
+
+        return states;
+    }
+
+    private static List<PreloadVideoPlayerState> CaptureVideoPlayerStates(VideoPlayer[] players)
+    {
+        List<PreloadVideoPlayerState> states = new List<PreloadVideoPlayerState>(players != null ? players.Length : 0);
+        if (players == null)
+            return states;
+
+        for (int i = 0; i < players.Length; i++)
+            AddVideoPlayerStateIfMissing(states, players[i]);
+
+        return states;
+    }
+
+    private static void AddVideoPlayerStateIfMissing(List<PreloadVideoPlayerState> states, VideoPlayer player)
+    {
+        if (states == null || player == null)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            if (states[i].Player == player)
+                return;
+        }
+
+        states.Add(new PreloadVideoPlayerState
+        {
+            Player = player,
+            PlayOnAwake = player.playOnAwake,
+        });
+    }
+
+    private static void PrepareAudioSourcesForSilentPreload(List<PreloadAudioSourceState> states)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            AudioSource source = states[i].Source;
+            if (source == null)
+                continue;
+
+            source.playOnAwake = false;
+            source.mute = true;
+            source.Stop();
+        }
+    }
+
+    private static void PrepareVideoPlayersForSilentPreload(List<PreloadVideoPlayerState> states)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            VideoPlayer player = states[i].Player;
+            if (player == null)
+                continue;
+
+            player.playOnAwake = false;
+        }
+    }
+
+    private static void RestoreAudioSourcesAfterPreload(List<PreloadAudioSourceState> states)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            PreloadAudioSourceState state = states[i];
+            AudioSource source = state.Source;
+            if (source == null)
+                continue;
+
+            source.Stop();
+            source.playOnAwake = state.PlayOnAwake;
+            source.mute = state.Mute;
+            source.volume = state.Volume;
+        }
+    }
+
+    private static void RestoreVideoPlayersAfterPreload(List<PreloadVideoPlayerState> states)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            PreloadVideoPlayerState state = states[i];
+            VideoPlayer player = state.Player;
+            if (player == null)
+                continue;
+
+            player.playOnAwake = state.PlayOnAwake;
+        }
+    }
+
+    private void WarmupSceneForPreload(GameObject root)
+    {
+        if (root == null)
+            return;
+
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+            WarmupRendererForPreload(renderers[i]);
+
+        Animator[] animators = root.GetComponentsInChildren<Animator>(true);
+        for (int i = 0; i < animators.Length; i++)
+        {
+            Animator animator = animators[i];
+            if (animator == null || !animator.isActiveAndEnabled)
+                continue;
+
+            try { animator.Update(0f); } catch { }
+        }
+    }
+
+    private void WarmupRendererForPreload(Renderer renderer)
+    {
+        if (renderer == null)
+            return;
+
+        Mesh mesh = null;
+        SkinnedMeshRenderer skinned = renderer as SkinnedMeshRenderer;
+        if (skinned != null)
+        {
+            mesh = skinned.sharedMesh;
+        }
+        else
+        {
+            MeshFilter meshFilter = renderer.GetComponent<MeshFilter>();
+            if (meshFilter != null)
+                mesh = meshFilter.sharedMesh;
+        }
+
+        if (mesh != null)
+        {
+            try { mesh.UploadMeshData(false); } catch { }
+        }
+
+        Material[] materials = renderer.sharedMaterials;
+        if (materials == null)
+            return;
+
+        for (int i = 0; i < materials.Length; i++)
+            WarmupMaterialForPreload(materials[i]);
+    }
+
+    private void WarmupMaterialForPreload(Material material)
+    {
+        if (material == null)
+            return;
+
+        Shader shader = material.shader;
+        if (shader != null && shader.isSupported)
+        {
+            int passCount = Mathf.Min(material.passCount, 4);
+            for (int i = 0; i < passCount; i++)
+            {
+                try { material.SetPass(i); } catch { }
+            }
+        }
+
+        string[] textureProperties = null;
+        try { textureProperties = material.GetTexturePropertyNames(); } catch { }
+        if (textureProperties == null)
+            return;
+
+        for (int i = 0; i < textureProperties.Length; i++)
+            WarmupTextureForPreload(material.GetTexture(textureProperties[i]));
+    }
+
+    private static void WarmupTextureForPreload(Texture texture)
+    {
+        if (texture == null)
+            return;
+
+        int width = texture.width;
+        int height = texture.height;
+        if (width <= 0 || height <= 0)
+            return;
+
+        Texture2D texture2D = texture as Texture2D;
+        if (texture2D != null && QualitySettings.streamingMipmapsActive)
+            texture2D.requestedMipmapLevel = 0;
+
+        RenderTexture renderTexture = texture as RenderTexture;
+        if (renderTexture != null && !renderTexture.IsCreated())
+            renderTexture.Create();
+    }
+
+    private void TryPrepareVideoForPreload(VideoPlayer videoPlayer)
+    {
+        if (videoPlayer == null)
+            return;
+
+        try
+        {
+            EnsureVideoOutputSetup(videoPlayer);
+            if (!videoPlayer.isPrepared)
+                videoPlayer.Prepare();
+        }
+        catch (Exception ex)
+        {
+            if (verboseLogs)
+                Debug.LogWarning($"[SceneGroupManager] Video preload skipped for '{videoPlayer.name}': {ex.Message}");
+        }
+    }
+
+    private void RenderSceneForPreload(GameObject root)
+    {
+        if (root == null || !TryGetRenderableBounds(root, out Bounds bounds))
+            return;
+
+        GameObject cameraGo = null;
+        RenderTexture renderTexture = null;
+
+        try
+        {
+            int textureSize = Mathf.Clamp(preloadRenderTextureSize, 16, 256);
+            renderTexture = RenderTexture.GetTemporary(textureSize, textureSize, 16, RenderTextureFormat.ARGB32);
+
+            cameraGo = new GameObject("RuntimePreloadCamera");
+            cameraGo.hideFlags = HideFlags.HideAndDontSave;
+
+            Camera warmupCamera = cameraGo.AddComponent<Camera>();
+            warmupCamera.enabled = false;
+            warmupCamera.stereoTargetEye = StereoTargetEyeMask.None;
+            warmupCamera.clearFlags = CameraClearFlags.SolidColor;
+            warmupCamera.backgroundColor = Color.black;
+            warmupCamera.cullingMask = ~0;
+            warmupCamera.orthographic = true;
+            warmupCamera.allowHDR = false;
+            warmupCamera.allowMSAA = false;
+            warmupCamera.targetTexture = renderTexture;
+
+            float maxExtent = Mathf.Max(bounds.extents.x, Mathf.Max(bounds.extents.y, bounds.extents.z));
+            maxExtent = Mathf.Max(maxExtent, 0.5f);
+            float distance = Mathf.Max(2f, maxExtent * 3f);
+
+            warmupCamera.orthographicSize = maxExtent * 1.2f;
+            warmupCamera.nearClipPlane = 0.01f;
+            warmupCamera.farClipPlane = distance + (maxExtent * 4f) + 10f;
+            warmupCamera.transform.SetPositionAndRotation(
+                bounds.center + (Vector3.up * distance),
+                Quaternion.LookRotation(Vector3.down, Vector3.forward));
+
+            warmupCamera.Render();
+        }
+        catch (Exception ex)
+        {
+            if (verboseLogs)
+                Debug.LogWarning($"[SceneGroupManager] Hidden scene render preload skipped for '{root.name}': {ex.Message}");
+        }
+        finally
+        {
+            if (renderTexture != null)
+                RenderTexture.ReleaseTemporary(renderTexture);
+
+            if (cameraGo != null)
+                Destroy(cameraGo);
+        }
+    }
+
+    private static bool TryGetRenderableBounds(GameObject root, out Bounds bounds)
+    {
+        bounds = new Bounds();
+        if (root == null)
+            return false;
+
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        bool hasBounds = false;
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = renderer.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(renderer.bounds);
+            }
+        }
+
+        return hasBounds;
+    }
+
+    private bool ShouldKeepVisibleDuringLanguageSelection(Transform candidate)
+    {
+        if (candidate == null)
+            return false;
+
+        if (_languageSelectionTransform != null
+            && (candidate == _languageSelectionTransform || candidate.IsChildOf(_languageSelectionTransform)))
+        {
+            return true;
+        }
+
+        if (player != null && (candidate == player || candidate.IsChildOf(player)))
+            return true;
+
+        if (candidate == transform || candidate.IsChildOf(transform))
+            return true;
+
+        return false;
+    }
+
+    private void BuildLanguageSelectionUI()
+    {
+        BuildLanguageSelection3D();
+        return;
+
+        #pragma warning disable CS0162
+        Camera cam = ResolveMainCamera();
+
+        _languageSelectionRoot = new GameObject("NureLanguageSelection");
+        _languageSelectionTransform = _languageSelectionRoot.transform;
+        if (cam != null)
+            _languageSelectionTransform.SetParent(cam.transform, false);
+        else
+            DontDestroyOnLoad(_languageSelectionRoot);
+
+        Canvas canvas = _languageSelectionRoot.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.worldCamera = cam;
+        canvas.sortingOrder = 6000;
+
+        CanvasScaler scaler = _languageSelectionRoot.AddComponent<CanvasScaler>();
+        scaler.dynamicPixelsPerUnit = 12f;
+        _languageSelectionRoot.AddComponent<GraphicRaycaster>();
+        _languageSelectionRoot.AddComponent<TrackedDeviceGraphicRaycaster>();
+        EnsureLanguageSelectionEventSystem();
+
+        RectTransform rootRect = _languageSelectionRoot.GetComponent<RectTransform>();
+        rootRect.sizeDelta = languagePanelSize;
+        _languageSelectionTransform.localScale = Vector3.one * 0.001f;
+        _languageSelectionTransform.localPosition = new Vector3(0f, -0.02f, languagePanelDistanceFromCamera);
+        _languageSelectionTransform.localRotation = Quaternion.identity;
+
+        Image panel = _languageSelectionRoot.AddComponent<Image>();
+        panel.color = languagePanelColor;
+
+        Text title = CreateLanguageText(rootRect, "Title", GetLocalizedInterfaceText("choose_language_title", "Scegli la lingua"), 54, FontStyle.Bold);
+        title.rectTransform.anchorMin = new Vector2(0.08f, 0.64f);
+        title.rectTransform.anchorMax = new Vector2(0.92f, 0.86f);
+
+        Text subtitle = CreateLanguageText(rootRect, "Subtitle", GetLocalizedInterfaceText("choose_language_subtitle", "Seleziona una lingua per iniziare l'esperienza"), 28, FontStyle.Normal);
+        subtitle.rectTransform.anchorMin = new Vector2(0.12f, 0.52f);
+        subtitle.rectTransform.anchorMax = new Vector2(0.88f, 0.64f);
+
+        CreateLanguageButton(rootRect, "Italiano", new Vector2(0.12f, 0.16f), new Vector2(0.47f, 0.42f), NureLanguage.Italian, SelectLanguageItalian);
+        CreateLanguageButton(rootRect, "English", new Vector2(0.53f, 0.16f), new Vector2(0.88f, 0.42f), NureLanguage.English, SelectLanguageEnglish);
+
+        UpdateLanguageSelectionPose();
+        #pragma warning restore CS0162
+    }
+
+    private void BuildLanguageSelection3D()
+    {
+        Transform head = ResolveLanguageHeadTransform();
+
+        _languageSelectionRoot = new GameObject("NureLanguageSelection3D");
+        _languageSelectionTransform = _languageSelectionRoot.transform;
+        _languageSelectionFixedInWorld = true;
+
+        Vector3 origin = player != null ? player.position : Vector3.zero;
+        Vector3 forward = Vector3.forward;
+        Vector3 right = Vector3.right;
+
+        if (head != null)
+        {
+            origin = head.position;
+            forward = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
+            right = Vector3.ProjectOnPlane(head.right, Vector3.up).normalized;
+        }
+
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        if (right.sqrMagnitude < 0.0001f)
+            right = Vector3.Cross(Vector3.up, forward).normalized;
+
+        Vector3 center = origin + (forward * 0.55f) + (Vector3.down * 0.28f);
+        _languageSelectionTransform.SetPositionAndRotation(center, Quaternion.LookRotation(forward, Vector3.up));
+        _languageSelectionTransform.localScale = Vector3.one;
+
+        Texture italianTexture = ResolveLanguageFlagTexture(NureLanguage.Italian);
+        Texture englishTexture = ResolveLanguageFlagTexture(NureLanguage.English);
+        _italianLanguageMaterial = CreateRuntimeLanguageMaterial(Color.white, italianTexture);
+        _englishLanguageMaterial = CreateRuntimeLanguageMaterial(Color.white, englishTexture);
+
+        _italianLanguageButton = CreateLanguageButton3D(
+            "Italiano_Bandiera",
+            NureLanguage.Italian,
+            new Vector3(-0.31f, 0f, 0f),
+            _italianLanguageMaterial);
+        _englishLanguageButton = CreateLanguageButton3D(
+            "English_Flag",
+            NureLanguage.English,
+            new Vector3(0.31f, 0f, 0f),
+            _englishLanguageMaterial);
+    }
+
+    private TextMesh CreateLanguageText3D(string name, string text, Vector3 localPosition, float characterSize, FontStyle style)
+    {
+        GameObject go = new GameObject(name, typeof(MeshRenderer), typeof(TextMesh));
+        go.transform.SetParent(_languageSelectionTransform, false);
+        go.transform.localPosition = localPosition;
+        go.transform.localRotation = Quaternion.identity;
+        go.transform.localScale = Vector3.one;
+
+        TextMesh mesh = go.GetComponent<TextMesh>();
+        mesh.text = text;
+        mesh.anchor = TextAnchor.MiddleCenter;
+        mesh.alignment = TextAlignment.Center;
+        mesh.characterSize = characterSize;
+        mesh.fontSize = 96;
+        mesh.fontStyle = style;
+        mesh.color = languageTextColor;
+
+        Renderer renderer = go.GetComponent<Renderer>();
+        if (renderer != null)
+            renderer.sortingOrder = 6100;
+
+        return mesh;
+    }
+
+    private NureLanguageSelectionButton CreateLanguageButton3D(string objectName, NureLanguage language, Vector3 localPosition, Material buttonMaterial)
+    {
+        GameObject buttonRoot = new GameObject(objectName, typeof(MeshFilter), typeof(MeshRenderer), typeof(BoxCollider));
+        buttonRoot.name = objectName;
+        buttonRoot.transform.SetParent(_languageSelectionTransform, false);
+        buttonRoot.transform.localPosition = localPosition;
+        buttonRoot.transform.localRotation = Quaternion.identity;
+        buttonRoot.transform.localScale = new Vector3(LanguageFlagPlaneWidth, LanguageFlagPlaneHeight, 1f);
+
+        MeshFilter meshFilter = buttonRoot.GetComponent<MeshFilter>();
+        if (meshFilter != null)
+            meshFilter.sharedMesh = EnsureLanguageFlagPlaneMesh();
+
+        BoxCollider boxCollider = buttonRoot.GetComponent<BoxCollider>();
+        boxCollider.size = new Vector3(1f, 1f, LanguageFlagPlaneColliderDepth);
+        boxCollider.isTrigger = false;
+
+        Rigidbody rb = buttonRoot.GetComponent<Rigidbody>();
+        if (rb == null)
+            rb = buttonRoot.AddComponent<Rigidbody>();
+        rb.isKinematic = true;
+        rb.useGravity = false;
+
+        Renderer renderer = buttonRoot.GetComponent<Renderer>();
+        if (renderer != null)
+            renderer.sharedMaterial = buttonMaterial;
+
+        if (buttonRoot.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>() == null)
+            buttonRoot.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+
+        NureLanguageSelectionButton languageButton = buttonRoot.GetComponent<NureLanguageSelectionButton>();
+        if (languageButton == null)
+            languageButton = buttonRoot.AddComponent<NureLanguageSelectionButton>();
+
+        languageButton.Configure(this, language, player);
+        languageButton.worldColliderSize = new Vector3(1f, 1f, LanguageFlagPlaneColliderDepth);
+        languageButton.pinchPressDistance = 0.055f;
+        languageButton.pinchReleaseDistance = 0.075f;
+        languageButton.pinchTargetPadding = 0.06f;
+        languageButton.RefreshInteractableShape();
+        return languageButton;
+    }
+
+    private Mesh EnsureLanguageFlagPlaneMesh()
+    {
+        if (_languageFlagPlaneMesh != null)
+            return _languageFlagPlaneMesh;
+
+        _languageFlagPlaneMesh = new Mesh
+        {
+            name = "Runtime_LanguageFlagPlane"
+        };
+
+        _languageFlagPlaneMesh.vertices = new[]
+        {
+            new Vector3(-0.5f, -0.5f, 0f),
+            new Vector3(0.5f, -0.5f, 0f),
+            new Vector3(0.5f, 0.5f, 0f),
+            new Vector3(-0.5f, 0.5f, 0f)
+        };
+        _languageFlagPlaneMesh.uv = new[]
+        {
+            new Vector2(0f, 0f),
+            new Vector2(1f, 0f),
+            new Vector2(1f, 1f),
+            new Vector2(0f, 1f)
+        };
+        _languageFlagPlaneMesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+        _languageFlagPlaneMesh.RecalculateBounds();
+        _languageFlagPlaneMesh.RecalculateNormals();
+        return _languageFlagPlaneMesh;
+    }
+
+    private void UpdateLanguageSelectionFallbackInput()
+    {
+        if (!_waitingForLanguageSelection || _languageSelectionRoot == null)
+            return;
+
+        if (_languageSelectionInputLockedForPreload)
+            return;
+
+        if (TrySelectLanguageFromProximityZone())
+            return;
+
+        if (TrySelectLanguageFromHandTouch())
+            return;
+
+        _focusedLanguageButton = FindFocusedLanguageButton();
+        bool pressed = IsLanguageSelectionFallbackPressed();
+
+        if (pressed && !_previousLanguageSelectionFallbackPressed && _focusedLanguageButton != null)
+        {
+            if (Time.unscaledTime - _lastLanguageSelectionFallbackPressTime >= 0.2f)
+            {
+                _lastLanguageSelectionFallbackPressTime = Time.unscaledTime;
+                _focusedLanguageButton.PressNow();
+            }
+        }
+
+        _previousLanguageSelectionFallbackPressed = pressed;
+    }
+
+    private bool TrySelectLanguageFromProximityZone()
+    {
+        if (Time.unscaledTime - _lastLanguageSelectionFallbackPressTime < 0.2f)
+            return false;
+
+        if (_italianLanguageButton == null && _englishLanguageButton == null)
+            return false;
+
+        if (!TryGetBestSelectorPointerPosition(out Vector3 pointerPosition))
+            return false;
+
+        const float selectionRadius = 0.3f;
+        float italianDistance = _italianLanguageButton != null
+            ? Vector3.Distance(pointerPosition, _italianLanguageButton.transform.position)
+            : float.PositiveInfinity;
+        float englishDistance = _englishLanguageButton != null
+            ? Vector3.Distance(pointerPosition, _englishLanguageButton.transform.position)
+            : float.PositiveInfinity;
+
+        if (italianDistance > selectionRadius && englishDistance > selectionRadius)
+            return false;
+
+        _lastLanguageSelectionFallbackPressTime = Time.unscaledTime;
+
+        if (italianDistance <= englishDistance)
+            _italianLanguageButton.PressNow();
+        else
+            _englishLanguageButton.PressNow();
+
+        return true;
+    }
+
+    private bool TryGetBestSelectorPointerPosition(out Vector3 pointerPosition)
+    {
+        pointerPosition = Vector3.zero;
+
+        if (TryGetNearestControllerPosition(out pointerPosition))
+            return true;
+
+        bool hasLeft = XRHandsPinchUtility.TryGetPinchData(XRHandsPinchUtility.HandSide.Left, player, out XRHandsPinchUtility.PinchData left);
+        bool hasRight = XRHandsPinchUtility.TryGetPinchData(XRHandsPinchUtility.HandSide.Right, player, out XRHandsPinchUtility.PinchData right);
+
+        if (hasLeft && hasRight)
+        {
+            pointerPosition = GetNearestLanguageSelectorPoint(left.indexTipWorld, right.indexTipWorld);
+            return true;
+        }
+
+        if (hasLeft)
+        {
+            pointerPosition = left.indexTipWorld;
+            return true;
+        }
+
+        if (hasRight)
+        {
+            pointerPosition = right.indexTipWorld;
+            return true;
+        }
+
+        return false;
+    }
+
+    private Vector3 GetNearestLanguageSelectorPoint(Vector3 a, Vector3 b)
+    {
+        float aDistance = GetNearestLanguageSelectorDistance(a);
+        float bDistance = GetNearestLanguageSelectorDistance(b);
+        return aDistance <= bDistance ? a : b;
+    }
+
+    private float GetNearestLanguageSelectorDistance(Vector3 point)
+    {
+        float best = float.PositiveInfinity;
+        if (_italianLanguageButton != null)
+            best = Mathf.Min(best, Vector3.Distance(point, _italianLanguageButton.transform.position));
+        if (_englishLanguageButton != null)
+            best = Mathf.Min(best, Vector3.Distance(point, _englishLanguageButton.transform.position));
+        return best;
+    }
+
+    private bool TryGetNearestControllerPosition(out Vector3 position)
+    {
+        bool hasLeft = TryGetControllerPosition(XRNode.LeftHand, out Vector3 left);
+        bool hasRight = TryGetControllerPosition(XRNode.RightHand, out Vector3 right);
+
+        if (hasLeft && hasRight)
+        {
+            position = GetNearestLanguageSelectorPoint(left, right);
+            return true;
+        }
+
+        if (hasLeft)
+        {
+            position = left;
+            return true;
+        }
+
+        if (hasRight)
+        {
+            position = right;
+            return true;
+        }
+
+        position = Vector3.zero;
+        return false;
+    }
+
+    private bool TryGetControllerPosition(XRNode node, out Vector3 position)
+    {
+        position = Vector3.zero;
+        UnityEngine.XR.InputDevice device = InputDevices.GetDeviceAtXRNode(node);
+        if (!device.isValid)
+            return false;
+
+        if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked, out bool isTracked) && !isTracked)
+            return false;
+
+        if (!device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.devicePosition, out position))
+            return false;
+
+        position = ResolveLikelyWorldSelectorPosition(position);
+        return true;
+    }
+
+    private Vector3 ResolveLikelyWorldSelectorPosition(Vector3 rawPosition)
+    {
+        if (player == null)
+            return rawPosition;
+
+        Transform head = ResolveLanguageHeadTransform();
+        if (head == null)
+            return player.TransformPoint(rawPosition);
+
+        Vector3 converted = player.TransformPoint(rawPosition);
+        float rawDistance = (rawPosition - head.position).sqrMagnitude;
+        float convertedDistance = (converted - head.position).sqrMagnitude;
+        return convertedDistance + 0.000001f < rawDistance ? converted : rawPosition;
+    }
+
+    private bool TrySelectLanguageFromHandTouch()
+    {
+        if (Time.unscaledTime - _lastLanguageSelectionFallbackPressTime < 0.2f)
+            return false;
+
+        NureLanguageSelectionButton[] buttons = _languageSelectionRoot.GetComponentsInChildren<NureLanguageSelectionButton>(true);
+        if (buttons == null || buttons.Length == 0)
+            return false;
+
+        if (TryGetTouchedLanguageButton(XRHandsPinchUtility.HandSide.Left, buttons, out NureLanguageSelectionButton leftButton)
+            || TryGetTouchedLanguageButton(XRHandsPinchUtility.HandSide.Right, buttons, out leftButton))
+        {
+            _lastLanguageSelectionFallbackPressTime = Time.unscaledTime;
+            leftButton.PressNow();
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryGetTouchedLanguageButton(XRHandsPinchUtility.HandSide side, NureLanguageSelectionButton[] buttons, out NureLanguageSelectionButton touchedButton)
+    {
+        touchedButton = null;
+
+        if (!XRHandsPinchUtility.TryGetPinchData(side, player, out XRHandsPinchUtility.PinchData pinch))
+            return false;
+
+        const float touchDistance = 0.075f;
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            NureLanguageSelectionButton button = buttons[i];
+            if (button == null)
+                continue;
+
+            Collider collider = button.GetComponent<Collider>();
+            if (collider == null)
+                continue;
+
+            if (IsPointTouchingCollider(pinch.indexTipWorld, collider, touchDistance)
+                || IsPointTouchingCollider(pinch.thumbTipWorld, collider, touchDistance)
+                || IsPointTouchingCollider(pinch.pinchWorld, collider, touchDistance))
+            {
+                touchedButton = button;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPointTouchingCollider(Vector3 point, Collider collider, float maxDistance)
+    {
+        if (collider == null)
+            return false;
+
+        Vector3 closest = collider.ClosestPoint(point);
+        return (closest - point).sqrMagnitude <= maxDistance * maxDistance;
+    }
+
+    private NureLanguageSelectionButton FindFocusedLanguageButton()
+    {
+        Transform head = ResolveLanguageHeadTransform();
+        if (head == null)
+            return null;
+
+        Ray ray = new Ray(head.position, head.forward);
+        if (Physics.Raycast(ray, out RaycastHit hit, 2f, ~0, QueryTriggerInteraction.Collide))
+        {
+            NureLanguageSelectionButton button = hit.collider.GetComponentInParent<NureLanguageSelectionButton>();
+            if (button != null)
+                return button;
+        }
+
+        NureLanguageSelectionButton[] buttons = _languageSelectionRoot.GetComponentsInChildren<NureLanguageSelectionButton>(true);
+        if (buttons == null || buttons.Length == 0)
+            return null;
+
+        NureLanguageSelectionButton best = null;
+        float bestScore = -1f;
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            NureLanguageSelectionButton button = buttons[i];
+            if (button == null)
+                continue;
+
+            Vector3 toButton = button.transform.position - head.position;
+            if (toButton.sqrMagnitude < 0.0001f)
+                continue;
+
+            float score = Vector3.Dot(head.forward, toButton.normalized);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = button;
+            }
+        }
+
+        return bestScore > 0.86f ? best : null;
+    }
+
+    private bool IsLanguageSelectionFallbackPressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        if (Keyboard.current != null)
+        {
+            if (Keyboard.current.digit1Key.wasPressedThisFrame)
+            {
+                SelectLanguageItalian();
+                return false;
+            }
+            if (Keyboard.current.digit2Key.wasPressedThisFrame)
+            {
+                SelectLanguageEnglish();
+                return false;
+            }
+        }
+#endif
+
+        if (TryGetFallbackButtonPressed(XRNode.RightHand) || TryGetFallbackButtonPressed(XRNode.LeftHand))
+            return true;
+
+        return TryGetFallbackPinchPressed(XRHandsPinchUtility.HandSide.Right)
+            || TryGetFallbackPinchPressed(XRHandsPinchUtility.HandSide.Left);
+    }
+
+    private static bool TryGetFallbackButtonPressed(XRNode node)
+    {
+        UnityEngine.XR.InputDevice device = InputDevices.GetDeviceAtXRNode(node);
+        if (!device.isValid)
+            return false;
+
+        if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.triggerButton, out bool triggerButton) && triggerButton)
+            return true;
+        if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out bool primaryButton) && primaryButton)
+            return true;
+        if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out bool gripButton) && gripButton)
+            return true;
+        if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.trigger, out float trigger) && trigger >= 0.65f)
+            return true;
+
+        return false;
+    }
+
+    private bool TryGetFallbackPinchPressed(XRHandsPinchUtility.HandSide side)
+    {
+        return XRHandsPinchUtility.TryGetPinchData(side, player, out XRHandsPinchUtility.PinchData pinch)
+            && pinch.pinchDistance <= 0.045f;
+    }
+
+    private Texture2D CreateLanguageFlagTexture(NureLanguage language)
+    {
+        Color32[] pixels = new Color32[LanguageFlagTextureWidth * LanguageFlagTextureHeight];
+
+        if (language == NureLanguage.Italian)
+            PaintItalianFlagTexture(pixels, LanguageFlagTextureWidth, LanguageFlagTextureHeight);
+        else
+            PaintEnglishFlagTexture(pixels, LanguageFlagTextureWidth, LanguageFlagTextureHeight);
+
+        Texture2D texture = new Texture2D(LanguageFlagTextureWidth, LanguageFlagTextureHeight, TextureFormat.RGBA32, false, false);
+        texture.name = language == NureLanguage.Italian ? "Runtime_ItalianFlag_Texture" : "Runtime_EnglishFlag_Texture";
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        texture.anisoLevel = 2;
+        texture.SetPixels32(pixels);
+        texture.Apply(false, true);
+        return texture;
+    }
+
+    private static void PaintItalianFlagTexture(Color32[] pixels, int width, int height)
+    {
+        for (int y = 0; y < height; y++)
+        {
+            int row = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                pixels[row + x] = x < width / 3
+                    ? ItalianFlagGreen
+                    : x < (width * 2) / 3
+                        ? ItalianFlagWhite
+                        : ItalianFlagRed;
+            }
+        }
+    }
+
+    private static void PaintEnglishFlagTexture(Color32[] pixels, int width, int height)
+    {
+        const float diagonalNormal = 1.118034f;
+
+        for (int y = 0; y < height; y++)
+        {
+            float v = (y + 0.5f) / height;
+            float py = v - 0.5f;
+            int row = y * width;
+
+            for (int x = 0; x < width; x++)
+            {
+                float u = (x + 0.5f) / width;
+                float px = (u * 2f) - 1f;
+                float diagonalA = Mathf.Abs(py - (px * 0.5f)) / diagonalNormal;
+                float diagonalB = Mathf.Abs(py + (px * 0.5f)) / diagonalNormal;
+                float absX = Mathf.Abs(px);
+                float absY = Mathf.Abs(py);
+
+                Color32 color = EnglishFlagBlue;
+
+                if (diagonalA < 0.105f || diagonalB < 0.105f)
+                    color = EnglishFlagWhite;
+                if (diagonalA < 0.045f || diagonalB < 0.045f)
+                    color = EnglishFlagRed;
+                if (absX < 0.155f || absY < 0.135f)
+                    color = EnglishFlagWhite;
+                if (absX < 0.075f || absY < 0.065f)
+                    color = EnglishFlagRed;
+
+                pixels[row + x] = color;
+            }
+        }
+    }
+
+    private Material CreateRuntimeLanguageMaterial(Color color, Texture texture = null)
+    {
+        Shader shader =
+            Shader.Find("Universal Render Pipeline/Unlit") ??
+            Shader.Find("Unlit/Texture") ??
+            Shader.Find("Sprites/Default") ??
+            Shader.Find("Unlit/Color") ??
+            Shader.Find("Standard");
+
+        if (shader == null)
+        {
+            Debug.LogWarning("[SceneGroupManager] Nessuno shader disponibile per il materiale del menu lingua.");
+            return null;
+        }
+
+        Material material = new Material(shader);
+        material.name = texture != null ? $"Runtime_LanguageSelection_{texture.name}_Material" : "Runtime_LanguageSelection_Material";
+        Color tint = texture != null ? Color.white : color;
+
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", tint);
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", tint);
+        if (texture != null)
+        {
+            texture.wrapMode = TextureWrapMode.Clamp;
+
+            if (material.HasProperty("_BaseMap"))
+                material.SetTexture("_BaseMap", texture);
+            if (material.HasProperty("_MainTex"))
+                material.SetTexture("_MainTex", texture);
+        }
+        if (material.HasProperty("_Cull"))
+            material.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
+
+        return material;
+    }
+
+    private Text CreateLanguageText(RectTransform parent, string name, string text, int fontSize, FontStyle style)
+    {
+        GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+        RectTransform rect = go.GetComponent<RectTransform>();
+        rect.SetParent(parent, false);
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        Text label = go.GetComponent<Text>();
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.text = text;
+        label.fontSize = fontSize;
+        label.fontStyle = style;
+        label.alignment = TextAnchor.MiddleCenter;
+        label.color = languageTextColor;
+        label.horizontalOverflow = HorizontalWrapMode.Wrap;
+        label.verticalOverflow = VerticalWrapMode.Overflow;
+        return label;
+    }
+
+    private void CreateLanguageButton(RectTransform parent, string labelText, Vector2 anchorMin, Vector2 anchorMax, NureLanguage language, UnityEngine.Events.UnityAction action)
+    {
+        GameObject go = new GameObject($"Button - {labelText}", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(BoxCollider), typeof(UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable), typeof(NureLanguageSelectionButton));
+        RectTransform rect = go.GetComponent<RectTransform>();
+        rect.SetParent(parent, false);
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        Image image = go.GetComponent<Image>();
+        image.color = languageButtonColor;
+
+        Button button = go.GetComponent<Button>();
+        button.onClick.AddListener(action);
+
+        NureLanguageSelectionButton languageButton = go.GetComponent<NureLanguageSelectionButton>();
+        languageButton.Configure(this, language, player);
+        languageButton.pinchPressDistance = 0.05f;
+        languageButton.pinchReleaseDistance = 0.07f;
+        languageButton.pinchTargetPadding = 0.1f;
+
+        Text label = CreateLanguageText(rect, "Label", labelText, 34, FontStyle.Bold);
+        label.rectTransform.anchorMin = Vector2.zero;
+        label.rectTransform.anchorMax = Vector2.one;
+        label.raycastTarget = false;
+    }
+
+    private void EnsureLanguageSelectionEventSystem()
+    {
+        EventSystem es = FindFirstObjectByType<EventSystem>();
+        if (es == null)
+        {
+            GameObject esGo = new GameObject("EventSystem");
+            es = esGo.AddComponent<EventSystem>();
+        }
+
+#if ENABLE_INPUT_SYSTEM
+        if (es != null && es.GetComponent<InputSystemUIInputModule>() == null)
+            es.gameObject.AddComponent<InputSystemUIInputModule>();
+#endif
+    }
+
+    private void UpdateLanguageSelectionPose()
+    {
+        if (!_waitingForLanguageSelection || _languageSelectionTransform == null)
+            return;
+
+        if (_languageSelectionFixedInWorld)
+            return;
+
+        Transform head = ResolveLanguageHeadTransform();
+        if (head == null)
+            return;
+
+        if (_languageSelectionTransform.parent != head)
+        {
+            _languageSelectionTransform.SetParent(head, false);
+
+            Canvas canvas = _languageSelectionRoot != null ? _languageSelectionRoot.GetComponent<Canvas>() : null;
+            if (canvas != null)
+                canvas.worldCamera = head.GetComponent<Camera>();
+        }
+
+        _languageSelectionTransform.localPosition = new Vector3(0f, -0.02f, Mathf.Clamp(languagePanelDistanceFromCamera, 0.75f, 1.15f));
+        _languageSelectionTransform.localRotation = Quaternion.identity;
+        if (_languageSelectionRoot != null && _languageSelectionRoot.GetComponent<Canvas>() != null)
+            _languageSelectionTransform.localScale = Vector3.one * 0.001f;
+        else
+            _languageSelectionTransform.localScale = Vector3.one;
+    }
+
+    private Transform ResolveLanguageHeadTransform()
+    {
+        Transform head = TryGetPlayerHeadTransform();
+        if (head != null)
+            return head;
+
+        Camera cam = ResolveMainCamera();
+        if (cam != null)
+            return cam.transform;
+
+        return player;
+    }
+
+    private Camera ResolveMainCamera()
+    {
+        if (Camera.main != null)
+            return Camera.main;
+
+        Camera[] cameras = FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < cameras.Length; i++)
+        {
+            Camera c = cameras[i];
+            if (c != null && c.gameObject.scene.IsValid() && c.isActiveAndEnabled)
+                return c;
+        }
+
+        return null;
+    }
+
+    private void RefreshLocalizedRuntimeUI()
+    {
+        HandRadialVirtualSceneMenu[] menus = FindObjectsByType<HandRadialVirtualSceneMenu>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < menus.Length; i++)
+        {
+            if (menus[i] != null)
+                menus[i].RefreshButtons();
+        }
+
+        MapPopupMenuController[] popups = FindObjectsByType<MapPopupMenuController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < popups.Length; i++)
+        {
+            if (popups[i] != null)
+                popups[i].SyncAll();
+        }
+    }
+
+    private void ScheduleLocalizedRuntimeUIRefresh()
+    {
+        if (_localizedRuntimeUiRefreshRoutine != null)
+            StopCoroutine(_localizedRuntimeUiRefreshRoutine);
+
+        _localizedRuntimeUiRefreshRoutine = StartCoroutine(RefreshLocalizedRuntimeUIDeferred());
+    }
+
+    private IEnumerator RefreshLocalizedRuntimeUIDeferred()
+    {
+        yield return null;
+        RefreshLocalizedRuntimeUI();
+        _localizedRuntimeUiRefreshRoutine = null;
     }
 
     // --- API PUBBLICA ---
@@ -638,11 +2767,11 @@ public class SceneGroupManager : MonoBehaviour
 
         foreach (var s in scenes)
         {
-            if (s.root != null)
+            if (s.root != null && s.root.activeSelf)
                 s.root.SetActive(false);
 
             // spegni eventuali pannelli video
-            if (s.videoPanelRoot != null)
+            if (s.videoPanelRoot != null && s.videoPanelRoot.activeSelf)
                 s.videoPanelRoot.SetActive(false);
         }
     }
@@ -691,7 +2820,8 @@ public class SceneGroupManager : MonoBehaviour
             }
 
             // 2) Altrimenti, se c'è audioClip, aspetta audio
-            if (audioSource != null && playAudioOnSwitch && cfg.audioClip != null)
+            AudioClip localizedClip = ResolveAudioClip(cfg);
+            if (audioSource != null && playAudioOnSwitch && localizedClip != null)
             {
                 if (waitUsingIsPlaying)
                 {
@@ -700,7 +2830,7 @@ public class SceneGroupManager : MonoBehaviour
                 }
                 else
                 {
-                    yield return new WaitForSeconds(cfg.audioClip.length);
+                    yield return new WaitForSeconds(localizedClip.length);
                 }
             }
             else
@@ -729,9 +2859,10 @@ public class SceneGroupManager : MonoBehaviour
         if (audioSource != null && stopAudioOnSwitch)
             audioSource.Stop();
 
-        if (audioSource != null && playAudioOnSwitch && cfg.audioClip != null)
+        AudioClip localizedClip = ResolveAudioClip(cfg);
+        if (audioSource != null && playAudioOnSwitch && localizedClip != null)
         {
-            audioSource.clip = cfg.audioClip;
+            audioSource.clip = localizedClip;
 
             if (audioStartDelay > 0f)
                 yield return new WaitForSeconds(audioStartDelay);
@@ -740,7 +2871,7 @@ public class SceneGroupManager : MonoBehaviour
 
             if (verboseLogs)
             {
-                Debug.Log($"[SceneGroupManager] PLAY audio '{cfg.audioClip.name}' scene={cfg.root?.name} " +
+                Debug.Log($"[SceneGroupManager] PLAY audio '{localizedClip.name}' scene={cfg.root?.name} lang={currentLanguage} " +
                           $"isPlaying={audioSource.isPlaying} vol={audioSource.volume} spatialBlend={audioSource.spatialBlend}");
             }
         }
@@ -837,6 +2968,9 @@ public class SceneGroupManager : MonoBehaviour
 
     private void ShowScene1ViewBlockerIfNeeded()
     {
+        if (_suppressScene1ViewBlocker)
+            return;
+
         if (!hideStartupScene1PoseAdjustments)
             return;
 
@@ -915,7 +3049,7 @@ public class SceneGroupManager : MonoBehaviour
         Canvas canvas = canvasGo.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = headCamera;
-        canvas.sortingOrder = 5000;
+        canvas.sortingOrder = 7000;
 
         CanvasScaler scaler = canvasGo.AddComponent<CanvasScaler>();
         scaler.dynamicPixelsPerUnit = 10f;
@@ -1290,9 +3424,13 @@ public class SceneGroupManager : MonoBehaviour
         foreach (var s in scenes)
         {
             if (s.root != null)
-                s.root.SetActive(s.root == cfg.root);
+            {
+                bool shouldBeActive = s.root == cfg.root;
+                if (s.root.activeSelf != shouldBeActive)
+                    s.root.SetActive(shouldBeActive);
+            }
 
-            if (s.videoPanelRoot != null)
+            if (s.videoPanelRoot != null && s.videoPanelRoot.activeSelf)
                 s.videoPanelRoot.SetActive(false);
         }
 
@@ -1306,7 +3444,21 @@ public class SceneGroupManager : MonoBehaviour
 
     private void TryPlaySceneSpawnDissolveFx(VirtualScene cfg)
     {
-        if (cfg == null || cfg.root == null || !enableSceneSpawnDissolveFx)
+        if (_suppressNextSceneSpawnDissolve)
+        {
+            _suppressNextSceneSpawnDissolve = false;
+            StopScene7DelayedDissolve(restoreTarget: true);
+
+            if (_sceneSpawnDissolveVfx != null)
+                _sceneSpawnDissolveVfx.StopAndClear();
+
+            return;
+        }
+
+        if (cfg == null
+            || cfg.root == null
+            || !enableSceneSpawnDissolveFx
+            || (disableSceneSpawnDissolveOnMobile && Application.isMobilePlatform))
         {
             StopScene7DelayedDissolve(restoreTarget: true);
 

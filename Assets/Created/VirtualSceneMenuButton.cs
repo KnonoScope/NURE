@@ -147,6 +147,12 @@ public class VirtualSceneMenuButton : MonoBehaviour
         UpdateLabel();
     }
 
+    public void RefreshLabel()
+    {
+        CacheLabelRefs();
+        UpdateLabel();
+    }
+
     public void OnPressed()
     {
         TryPress();
